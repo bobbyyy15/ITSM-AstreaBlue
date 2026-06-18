@@ -205,16 +205,18 @@ function NewTicketModal({ categories, onClose, onCreated }) {
   );
 }
 
-function TicketDetailsDrawer({
-  ticket,
-  onClose,
-  onRefresh,
-}) {
+function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(true);
+
   const [comment, setComment] = useState("");
   const [savingComment, setSavingComment] = useState(false);
+
   const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  const [technicians, setTechnicians] = useState([]);
+  const [selectedTechnician, setSelectedTechnician] = useState("");
+  const [assigning, setAssigning] = useState(false);
 
   const fetchDetails = useCallback(async () => {
     try {
@@ -229,9 +231,20 @@ function TicketDetailsDrawer({
     }
   }, [ticket.id]);
 
+  const fetchTechnicians = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/technicians`);
+      const data = await res.json();
+      setTechnicians(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch technicians failed:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchDetails();
-  }, [fetchDetails]);
+    fetchTechnicians();
+  }, [fetchDetails, fetchTechnicians]);
 
   const updateStatus = async (status) => {
     try {
@@ -277,6 +290,32 @@ function TicketDetailsDrawer({
     }
   };
 
+  const assignTechnician = async () => {
+    if (!selectedTechnician) return;
+
+    try {
+      setAssigning(true);
+
+      const res = await fetch(`${API_BASE}/tickets/${ticket.id}/assign`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assigned_to: Number(selectedTechnician),
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to assign technician");
+
+      await fetchDetails();
+      onRefresh();
+      setSelectedTechnician("");
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAssigning(false);
+    }
+  };
+
   const item = details || ticket;
 
   return (
@@ -314,7 +353,9 @@ function TicketDetailsDrawer({
 
               <div className="rounded-2xl bg-slate-50 p-4">
                 <p className="text-xs font-bold text-slate-400">Priority</p>
-                <p className="mt-1 font-black text-slate-900">{item.priority}</p>
+                <p className="mt-1 font-black text-slate-900">
+                  {item.priority}
+                </p>
               </div>
 
               <div className="rounded-2xl bg-slate-50 p-4">
@@ -325,10 +366,45 @@ function TicketDetailsDrawer({
               </div>
 
               <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs font-bold text-slate-400">Assigned To</p>
+                <p className="text-xs font-bold text-slate-400">
+                  Assigned To
+                </p>
                 <p className="mt-1 font-black text-slate-900">
                   {item.assigned_name || "Unassigned"}
                 </p>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+              <h3 className="mb-4 font-black text-slate-900">
+                Assign Technician
+              </h3>
+
+              <div className="flex gap-2">
+                <select
+                value={selectedTechnician}
+                onChange={(e) => setSelectedTechnician(e.target.value)}
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-600"
+                 style={{ color: "#0f172a" }}
+>
+                  <option value="" style={{ color: "#0f172a" }}>
+                     Select Technician
+                      </option>
+
+                  {technicians.map((tech) => (
+                    <option key={tech.user_id} value={tech.user_id}>
+                      {tech.full_name} — {tech.email}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={assignTechnician}
+                  disabled={!selectedTechnician || assigning}
+                  className="rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white hover:bg-blue-800 disabled:opacity-60"
+                >
+                  {assigning ? "Assigning..." : "Assign"}
+                </button>
               </div>
             </section>
 
@@ -340,7 +416,9 @@ function TicketDetailsDrawer({
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h3 className="mb-4 font-black text-slate-900">Update Status</h3>
+              <h3 className="mb-4 font-black text-slate-900">
+                Update Status
+              </h3>
               <div className="flex flex-wrap gap-2">
                 {columns.map((col) => (
                   <button
@@ -368,8 +446,13 @@ function TicketDetailsDrawer({
               <div className="space-y-3">
                 {item.comments?.length ? (
                   item.comments.map((c) => (
-                    <div key={c.comment_id} className="rounded-xl bg-slate-50 p-4">
-                      <p className="text-sm text-slate-700">{c.comment_text}</p>
+                    <div
+                      key={c.comment_id}
+                      className="rounded-xl bg-slate-50 p-4"
+                    >
+                      <p className="text-sm text-slate-700">
+                        {c.comment_text}
+                      </p>
                       <p className="mt-2 text-xs text-slate-400">
                         {c.full_name || "User"} ·{" "}
                         {new Date(c.created_at).toLocaleString()}
@@ -403,13 +486,18 @@ function TicketDetailsDrawer({
             <section className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="mb-4 flex items-center gap-2">
                 <History size={18} className="text-blue-600" />
-                <h3 className="font-black text-slate-900">Activity Timeline</h3>
+                <h3 className="font-black text-slate-900">
+                  Activity Timeline
+                </h3>
               </div>
 
               <div className="space-y-3">
                 {item.history?.length ? (
                   item.history.map((h) => (
-                    <div key={h.history_id} className="border-l-2 border-blue-200 pl-4">
+                    <div
+                      key={h.history_id}
+                      className="border-l-2 border-blue-200 pl-4"
+                    >
                       <p className="text-sm font-black text-slate-800">
                         {h.action}
                       </p>

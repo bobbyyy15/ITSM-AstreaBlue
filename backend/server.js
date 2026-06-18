@@ -54,10 +54,39 @@ app.get("/api/v1/ticket-categories", async (req, res) => {
 });
 
 /* ==========================
+   TECHNICIANS
+========================== */
+
+app.get("/api/v1/technicians", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT
+        u.user_id,
+        u.full_name,
+        u.email,
+        sr.role_name
+      FROM users u
+      JOIN system_roles sr
+        ON u.role_id = sr.role_id
+      WHERE LOWER(sr.role_name) = 'technician'
+      ORDER BY u.full_name ASC
+    `);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Fetch technicians error:", err.message);
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch technicians",
+    });
+  }
+});
+
+/* ==========================
    TICKETS
 ========================== */
 
-// GET ALL TICKETS
 app.get("/api/v1/tickets", async (req, res) => {
   try {
     const result = await db.query(`
@@ -113,7 +142,6 @@ app.get("/api/v1/tickets", async (req, res) => {
   }
 });
 
-// GET SINGLE TICKET WITH COMMENTS AND HISTORY
 app.get("/api/v1/tickets/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -224,7 +252,6 @@ app.get("/api/v1/tickets/:id", async (req, res) => {
   }
 });
 
-// CREATE TICKET
 app.post("/api/v1/tickets", async (req, res) => {
   try {
     const {
@@ -342,7 +369,6 @@ app.post("/api/v1/tickets", async (req, res) => {
   }
 });
 
-// UPDATE TICKET
 app.put("/api/v1/tickets/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -379,7 +405,11 @@ app.put("/api/v1/tickets/:id", async (req, res) => {
     const existing = existingResult.rows[0];
 
     const finalDescription =
-      description !== undefined ? description : desc !== undefined ? desc : existing.description;
+      description !== undefined
+        ? description
+        : desc !== undefined
+        ? desc
+        : existing.description;
 
     const finalStatus = status ?? existing.status;
 
@@ -472,7 +502,6 @@ app.put("/api/v1/tickets/:id", async (req, res) => {
   }
 });
 
-// ASSIGN TECHNICIAN
 app.patch("/api/v1/tickets/:id/assign", async (req, res) => {
   try {
     const { id } = req.params;
@@ -505,7 +534,7 @@ app.patch("/api/v1/tickets/:id/assign", async (req, res) => {
         assigned_to,
         updated_at
       `,
-      [assigned_to, id]
+      [assigned_to || null, id]
     );
 
     await db.query(
@@ -519,7 +548,7 @@ app.patch("/api/v1/tickets/:id/assign", async (req, res) => {
         changed_by,
         "Ticket Assigned",
         existingResult.rows[0].assigned_to,
-        assigned_to,
+        assigned_to || null,
       ]
     );
 
@@ -534,7 +563,6 @@ app.patch("/api/v1/tickets/:id/assign", async (req, res) => {
   }
 });
 
-// ADD COMMENT
 app.post("/api/v1/tickets/:id/comments", async (req, res) => {
   try {
     const { id } = req.params;
@@ -577,7 +605,6 @@ app.post("/api/v1/tickets/:id/comments", async (req, res) => {
   }
 });
 
-// DELETE TICKET
 app.delete("/api/v1/tickets/:id", async (req, res) => {
   try {
     const { id } = req.params;

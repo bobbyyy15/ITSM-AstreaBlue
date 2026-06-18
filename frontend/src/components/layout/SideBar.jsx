@@ -31,14 +31,14 @@ const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
   {
     label: "Service Desk",
-    icon: Ticket,
-    children: [
-      { label: "All Tickets", icon: FileText, path: "/tickets" },
-      { label: "Service Catalog", icon: Layers, path: "/tickets" },
-      { label: "Knowledge Base", icon: BookOpen, path: "/knowledge-base" },
-      { label: "SLA Monitor", icon: Activity, path: "/tickets" },
-    ],
-  },
+  icon: Ticket,
+  children: [
+    { label: "All Tickets", icon: FileText, path: "/tickets" },
+    { label: "Service Catalog", icon: Layers, path: "/service-catalog" },
+    { label: "Knowledge Base", icon: BookOpen, path: "/knowledge-base" },
+    { label: "SLA Monitor", icon: Activity, path: "/sla-monitor" },
+  ],
+},
   {
     label: "Asset Management",
     icon: Package,

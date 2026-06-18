@@ -18,6 +18,32 @@ import Analytics from "./views/Analytics";
 import EndpointMonitoring from "./views/EndpointMonitoring";
 import Settings from "./views/Settings";
 
+function ServiceCatalog() {
+  return (
+    <div className="space-y-6">
+      <h1 className="text-3xl font-black text-slate-900">Service Catalog</h1>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-slate-600">
+          Service Catalog module coming soon.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function SLAMonitor() {
+  return (
+    <div className="space-y-6">
+      <h1 className="text-3xl font-black text-slate-900">SLA Monitor</h1>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-slate-600">
+          SLA monitoring module coming soon.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function Unauthorized() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
@@ -47,8 +73,15 @@ export default function App() {
       >
         <Route path="/dashboard" element={<Dashboard />} />
 
+        <Route path="/admin/dashboard" element={<AdminDashboard />} />
+        <Route path="/technician/dashboard" element={<TechnicianDashboard />} />
+        <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
+
         <Route path="/tickets" element={<Tickets />} />
+        <Route path="/service-catalog" element={<ServiceCatalog />} />
         <Route path="/knowledge-base" element={<KnowledgeBase />} />
+        <Route path="/sla-monitor" element={<SLAMonitor />} />
+
         <Route path="/assets" element={<Assets />} />
         <Route path="/cmdb" element={<CMDB />} />
         <Route path="/change-management" element={<ChangeManagement />} />
@@ -56,36 +89,10 @@ export default function App() {
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/endpoint-monitoring" element={<EndpointMonitoring />} />
         <Route path="/settings" element={<Settings />} />
-
-        <Route
-          path="/admin/dashboard"
-          element={
-            <ProtectedRoute allowedRoles={["Admin"]}>
-              <AdminDashboard />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/technician/dashboard"
-          element={
-            <ProtectedRoute allowedRoles={["Technician"]}>
-              <TechnicianDashboard />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/employee/dashboard"
-          element={
-            <ProtectedRoute allowedRoles={["Employee"]}>
-              <EmployeeDashboard />
-            </ProtectedRoute>
-          }
-        />
       </Route>
 
       <Route path="/unauthorized" element={<Unauthorized />} />
+
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
