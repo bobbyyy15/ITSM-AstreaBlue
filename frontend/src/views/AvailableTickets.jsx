@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileText } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { buildTicketPayload, buildTicketQuery } from "../utils/ticketAccess";
+import { API_URL } from "../config/api";
 
-const API_BASE = "http://localhost:5001/api/v1";
+const API_BASE = `${API_URL}/api/v1`;
 
 export default function AvailableTickets() {
   const { user } = useAuth();
@@ -15,7 +17,7 @@ export default function AvailableTickets() {
   const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/tickets`);
+      const res = await fetch(`${API_BASE}/tickets${buildTicketQuery(user)}`);
       const data = await res.json();
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -23,7 +25,7 @@ export default function AvailableTickets() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchTickets();
@@ -47,7 +49,7 @@ export default function AvailableTickets() {
       const assignRes = await fetch(`${API_BASE}/tickets/${ticketId}/assign`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assigned_to: technicianId }),
+        body: JSON.stringify(buildTicketPayload(user, { assigned_to: technicianId })),
       });
 
       if (!assignRes.ok) throw new Error("Failed to accept ticket");
@@ -55,7 +57,7 @@ export default function AvailableTickets() {
       const statusRes = await fetch(`${API_BASE}/tickets/${ticketId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "In Progress" }),
+        body: JSON.stringify(buildTicketPayload(user, { status: "In Progress" })),
       });
 
       if (!statusRes.ok) throw new Error("Failed to start ticket");
@@ -101,6 +103,9 @@ export default function AvailableTickets() {
             </td>
             <td className="px-4 py-4 text-sm font-semibold text-slate-600">
               {ticket.category || "Uncategorized"}
+              <span className="ml-2 rounded-full bg-blue-50 px-2 py-1 text-xs font-black text-blue-700">
+                {ticket.branch_name || "No branch"}
+              </span>
             </td>
             <td className="px-4 py-4 text-sm font-semibold text-slate-600">
               {ticket.created_at ? new Date(ticket.created_at).toLocaleString() : "Not recorded"}

@@ -16,8 +16,11 @@ import {
   Paperclip,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import AttachmentPreviewModal from "../components/AttachmentPreviewModal";
+import { buildTicketPayload, buildTicketQuery } from "../utils/ticketAccess";
+import { API_URL } from "../config/api";
 
-const API_BASE = "http://localhost:5001/api/v1";
+const API_BASE = `${API_URL}/api/v1`;
 
 const columns = [
   { id: "Open Queue", label: "Open Queue", color: "bg-sky-500" },
@@ -33,7 +36,8 @@ const priorityStyle = {
   "P4-Low": "bg-blue-50 text-blue-700 border-blue-200",
 };
 
-function NewTicketModal({ categories, user, onClose, onCreated }) {
+function NewTicketModal({ categories, branches, user, onClose, onCreated }) {
+  const isSuperAdmin = (user?.role_name || user?.role) === "SuperAdmin";
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -43,6 +47,7 @@ function NewTicketModal({ categories, user, onClose, onCreated }) {
     source: "portal",
     impact: "Medium",
     urgency: "Medium",
+    branch_id: user?.branch_id || "",
   });
 
   const [saving, setSaving] = useState(false);
@@ -65,10 +70,11 @@ function NewTicketModal({ categories, user, onClose, onCreated }) {
     try {
       setSaving(true);
 
-      const payload = {
+      const payload = buildTicketPayload(user, {
         ...form,
         category_id: form.category_id || null,
-      };
+        branch_id: isSuperAdmin ? form.branch_id || null : user?.branch_id || null,
+      });
 
       const res = await fetch(`${API_BASE}/tickets`, {
         method: "POST",
@@ -143,6 +149,20 @@ function NewTicketModal({ categories, user, onClose, onCreated }) {
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {isSuperAdmin && (
+              <select
+                value={form.branch_id}
+                onChange={(e) => updateForm("branch_id", e.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none"
+              >
+                <option value="">Select branch</option>
+                {branches.map((branch) => (
+                  <option key={branch.branch_id} value={branch.branch_id}>
+                    {branch.branch_name}
+                  </option>
+                ))}
+              </select>
+            )}
             <select
               value={form.category_id}
               onChange={(e) => updateForm("category_id", e.target.value)}
@@ -273,11 +293,12 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
   const [technicians, setTechnicians] = useState([]);
   const [selectedTechnician, setSelectedTechnician] = useState("");
   const [assigning, setAssigning] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState(null);
 
   const fetchDetails = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/tickets/${ticket.id}`);
+      const res = await fetch(`${API_BASE}/tickets/${ticket.id}${buildTicketQuery(user)}`);
       const data = await res.json();
       setDetails(data);
     } catch (err) {
@@ -359,7 +380,7 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
         const statusRes = await fetch(`${API_BASE}/tickets/${ticket.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: selectedStatus }),
+          body: JSON.stringify(buildTicketPayload(user, { status: selectedStatus })),
         });
 
         if (!statusRes.ok) throw new Error("Failed to update status");
@@ -371,6 +392,7 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             assigned_to: selectedTechnician ? Number(selectedTechnician) : null,
+            ...buildTicketPayload(user),
           }),
         });
 
@@ -401,15 +423,13 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
     });
   };
 
-  const openAttachment = async (attachmentId) => {
-    try {
-      const attachment = item.attachments?.find(
-        (entry) => entry.attachment_id === attachmentId
-      );
-      if (!attachment?.file_path) throw new Error("Attachment file path not found");
-      window.open(`http://localhost:5001${attachment.file_path}`, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      console.error(err);
+  const openAttachment = (attachment) => {
+    if (attachment.mime_type?.startsWith("image/")) {
+      setPreviewAttachment(attachment);
+      return;
+    }
+    if (attachment.file_path) {
+      window.open(`${API_URL}${attachment.file_path}`, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -502,6 +522,13 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
                   ))}
                 </select>
               </div>
+
+              <div className="rounded-2xl bg-blue-50 p-4">
+                <p className="text-xs font-bold text-blue-400">Branch</p>
+                <p className="mt-1 font-black text-blue-800">
+                  {item.branch_name || "Unassigned Branch"}
+                </p>
+              </div>
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -521,10 +548,17 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
                   {item.attachments.map((attachment) => (
                     <button
                       key={attachment.attachment_id}
-                      onClick={() => openAttachment(attachment.attachment_id)}
-                      className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                      onClick={() => openAttachment(attachment)}
+                      className="flex w-full items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700"
                     >
-                      <span>{attachment.file_name}</span>
+                      {attachment.mime_type?.startsWith("image/") && (
+                        <img
+                          src={`${API_URL}${attachment.file_path}`}
+                          alt={attachment.file_name}
+                          className="h-12 w-16 rounded-lg object-cover"
+                        />
+                      )}
+                      <span className="flex-1">{attachment.file_name}</span>
                       <span className="text-xs text-slate-400">
                         {attachment.mime_type}
                       </span>
@@ -726,6 +760,12 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
           </div>
         </div>
       </div>
+      {previewAttachment && (
+        <AttachmentPreviewModal
+          attachment={previewAttachment}
+          onClose={() => setPreviewAttachment(null)}
+        />
+      )}
     </div>
   );
 }
@@ -781,6 +821,10 @@ function TicketCard({ ticket, onClick }) {
           <User size={12} />
           {ticket.assigned_name || "Unassigned"}
         </span>
+
+        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-700">
+          {ticket.branch_name || "Unassigned Branch"}
+        </span>
       </div>
     </div>
   );
@@ -823,6 +867,8 @@ export default function Tickets() {
   const { user } = useAuth();
   const [tickets, setTickets] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [branchFilter, setBranchFilter] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [query, setQuery] = useState("");
@@ -831,7 +877,11 @@ export default function Tickets() {
   const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/tickets`);
+      const res = await fetch(
+        `${API_BASE}/tickets${buildTicketQuery(user, {
+          filter_branch_id: branchFilter,
+        })}`
+      );
       const data = await res.json();
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -839,7 +889,7 @@ export default function Tickets() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [branchFilter, user]);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -851,10 +901,21 @@ export default function Tickets() {
     }
   }, []);
 
+  const fetchBranches = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/branches`);
+      const data = await res.json();
+      setBranches(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch branches failed:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTickets();
     fetchCategories();
-  }, [fetchTickets, fetchCategories]);
+    fetchBranches();
+  }, [fetchTickets, fetchCategories, fetchBranches]);
 
   const filteredTickets = useMemo(() => {
     const text = query.toLowerCase();
@@ -873,6 +934,7 @@ export default function Tickets() {
   const totalOpen = tickets.filter((t) => t.status !== "Closed").length;
   const critical = tickets.filter((t) => t.priority === "P1-Critical").length;
   const resolved = tickets.filter((t) => t.status === "Resolved").length;
+  const isSuperAdmin = (user?.role_name || user?.role) === "SuperAdmin";
 
   return (
     <div className="space-y-6">
@@ -934,7 +996,21 @@ export default function Tickets() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          {isSuperAdmin && (
+            <select
+              value={branchFilter}
+              onChange={(e) => setBranchFilter(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 outline-none"
+            >
+              <option value="">All branches</option>
+              {branches.map((branch) => (
+                <option key={branch.branch_id} value={branch.branch_id}>
+                  {branch.branch_name}
+                </option>
+              ))}
+            </select>
+          )}
           <Search size={18} className="text-slate-400" />
           <input
             value={query}
@@ -967,6 +1043,7 @@ export default function Tickets() {
       {modalOpen && (
         <NewTicketModal
           categories={categories}
+          branches={branches}
           user={user}
           onClose={() => setModalOpen(false)}
           onCreated={() => {

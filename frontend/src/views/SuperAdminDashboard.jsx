@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GitBranch, Ticket, UserCog, Users } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { buildTicketQuery } from "../utils/ticketAccess";
+import { API_URL } from "../config/api";
 
-const API_BASE = "http://localhost:5000/api/v1";
+const API_BASE = `${API_URL}/api/v1`;
 
 export default function SuperAdminDashboard() {
+  const { user } = useAuth();
   const [branches, setBranches] = useState([]);
   const [users, setUsers] = useState([]);
   const [tickets, setTickets] = useState([]);
@@ -15,7 +19,7 @@ export default function SuperAdminDashboard() {
       const [branchRes, userRes, ticketRes] = await Promise.all([
         fetch(`${API_BASE}/branches`),
         fetch(`${API_BASE}/users`),
-        fetch(`${API_BASE}/tickets`),
+        fetch(`${API_BASE}/tickets${buildTicketQuery(user)}`),
       ]);
 
       const [branchData, userData, ticketData] = await Promise.all([
@@ -32,7 +36,7 @@ export default function SuperAdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchData();
@@ -44,17 +48,19 @@ export default function SuperAdminDashboard() {
 
   const ticketsPerBranch = useMemo(() => {
     return branches.map((branch) => {
-      const branchUserIds = users
-        .filter((user) => Number(user.branch_id) === Number(branch.branch_id))
-        .map((user) => Number(user.user_id));
+      const branchTickets = tickets.filter(
+        (ticket) => String(ticket.branch_id || "") === String(branch.branch_id || "")
+      );
 
-      const count = tickets.filter((ticket) =>
-        branchUserIds.includes(Number(ticket.requester_id))
-      ).length;
-
-      return { ...branch, count };
+      return {
+        ...branch,
+        count: branchTickets.length,
+        open: branchTickets.filter((ticket) => ticket.status !== "Resolved" && ticket.status !== "Closed").length,
+        resolved: branchTickets.filter((ticket) => ticket.status === "Resolved" || ticket.status === "Closed").length,
+        recent: branchTickets.slice(0, 3),
+      };
     });
-  }, [branches, tickets, users]);
+  }, [branches, tickets]);
 
   return (
     <div className="space-y-6">
@@ -94,6 +100,35 @@ export default function SuperAdminDashboard() {
                   <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-black text-blue-700">
                     {branch.count}
                   </span>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel title="Open Tickets by Branch">
+            <BranchMetricList branches={ticketsPerBranch} metric="open" emptyText="No open tickets by branch." />
+          </Panel>
+
+          <Panel title="Resolved Tickets by Branch">
+            <BranchMetricList branches={ticketsPerBranch} metric="resolved" emptyText="No resolved tickets by branch." />
+          </Panel>
+
+          <Panel title="Recent Activity by Branch">
+            <div className="space-y-4">
+              {ticketsPerBranch.map((branch) => (
+                <div key={branch.branch_id} className="rounded-2xl bg-slate-50 p-4">
+                  <p className="font-black text-slate-900">{branch.branch_name}</p>
+                  <div className="mt-3 space-y-2">
+                    {branch.recent.length ? (
+                      branch.recent.map((ticket) => (
+                        <div key={ticket.id} className="text-sm font-semibold text-slate-600">
+                          {ticket.ticket_number} - {ticket.status}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm font-semibold text-slate-400">No recent activity.</p>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -146,6 +181,33 @@ function MiniStat({ label, value }) {
     <div className="rounded-2xl bg-slate-50 p-5">
       <p className="text-2xl font-black text-slate-900">{value}</p>
       <p className="text-sm font-semibold text-slate-500">{label}</p>
+    </div>
+  );
+}
+
+function BranchMetricList({ branches, metric, emptyText }) {
+  if (!branches.length) {
+    return <p className="text-sm font-semibold text-slate-400">{emptyText}</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {branches.map((branch) => (
+        <div
+          key={branch.branch_id}
+          className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"
+        >
+          <div>
+            <p className="font-black text-slate-900">{branch.branch_name}</p>
+            <p className="text-xs font-semibold text-slate-500">
+              {branch.city_municipality || branch.branch_location || "Branch"}
+            </p>
+          </div>
+          <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-black text-blue-700">
+            {branch[metric]}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

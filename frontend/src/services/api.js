@@ -1,4 +1,6 @@
-const API_BASE_URL = 'http://localhost:5001/api'; // Points straight to your Express backend port
+import { API_URL } from "../config/api";
+
+const API_BASE_URL = `${API_URL}/api`; // Points straight to your Express backend port
 
 export const apiService = {
   // Get all tracking assets

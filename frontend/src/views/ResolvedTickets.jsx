@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { buildTicketQuery } from "../utils/ticketAccess";
+import { API_URL } from "../config/api";
 
-const API_BASE = "http://localhost:5001/api/v1";
+const API_BASE = `${API_URL}/api/v1`;
 
 export default function ResolvedTickets() {
   const { user } = useAuth();
@@ -13,7 +15,7 @@ export default function ResolvedTickets() {
   const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/tickets`);
+      const res = await fetch(`${API_BASE}/tickets${buildTicketQuery(user)}`);
       const data = await res.json();
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -21,7 +23,7 @@ export default function ResolvedTickets() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchTickets();
@@ -88,6 +90,9 @@ export default function ResolvedTickets() {
                       <p className="line-clamp-1 text-sm text-slate-400">
                         {ticket.desc || ticket.description}
                       </p>
+                      <span className="mt-2 inline-flex rounded-full bg-blue-50 px-2 py-1 text-xs font-black text-blue-700">
+                        {ticket.branch_name || "No branch"}
+                      </span>
                     </td>
                     <td className="px-4 py-4">
                       <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">
