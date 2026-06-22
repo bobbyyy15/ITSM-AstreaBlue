@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Edit3, GitBranch, Plus, Search, X } from "lucide-react";
+import { API_URL } from "../config/api";
 
-const API_BASE = "http://localhost:5000/api/v1";
+const API_BASE = `${API_URL}/api/v1`;
 
 const emptyForm = {
   branch_name: "",

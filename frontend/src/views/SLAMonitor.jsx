@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle, Clock, Timer } from "lucide-react";
+import { API_URL } from "../config/api";
 
-const API_BASE = "http://localhost:5000/api/v1";
+const API_BASE = `${API_URL}/api/v1`;
 
 export default function SLAMonitor() {
   const [tickets, setTickets] = useState([]);

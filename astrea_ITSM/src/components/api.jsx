@@ -1,5 +1,5 @@
 // src/api.js
-const API_URL = 'http://localhost:5000'; // Change this to your real URL
+import { API_URL } from "../config/api";
 
 export async function getData(endpoint) {
   const response = await fetch(`${API_URL}${endpoint}`);

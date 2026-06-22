@@ -6,6 +6,7 @@ const path = require("path");
 const multer = require("multer");
 const db = require("./config/db");
 const authRoutes = require("./src/routes/auth");
+const dashboardRoutes = require("./src/routes/dashboard");
 
 require("dotenv").config();
 
@@ -87,7 +88,11 @@ async function ensureRoleBranchManagement() {
     await db.query(`
       CREATE TABLE IF NOT EXISTS branches (
         branch_id SERIAL PRIMARY KEY,
+        branch_code VARCHAR(50),
         branch_name VARCHAR(150) NOT NULL,
+        region VARCHAR(100),
+        province VARCHAR(100),
+        city_municipality VARCHAR(150),
         branch_location VARCHAR(255),
         is_headquarters BOOLEAN DEFAULT FALSE,
         is_active BOOLEAN DEFAULT TRUE,
@@ -97,6 +102,10 @@ async function ensureRoleBranchManagement() {
 
     await db.query(`
       ALTER TABLE branches
+      ADD COLUMN IF NOT EXISTS branch_code VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS region VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS province VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS city_municipality VARCHAR(150),
       ADD COLUMN IF NOT EXISTS is_headquarters BOOLEAN DEFAULT FALSE
     `);
 
@@ -105,6 +114,11 @@ async function ensureRoleBranchManagement() {
       ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(branch_id),
       ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE,
       ADD COLUMN IF NOT EXISTS mobile_number VARCHAR(20)
+    `);
+
+    await db.query(`
+      ALTER TABLE tickets
+      ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(branch_id)
     `);
 
     await db.query(`
@@ -200,11 +214,70 @@ async function ensureAttachmentsAndInvites() {
 
 ensureAttachmentsAndInvites();
 
+function getRequestContext(req) {
+  return {
+    currentUserId:
+      req.query.current_user_id ||
+      req.body.current_user_id ||
+      req.query.user_id ||
+      req.body.user_id ||
+      null,
+    roleName: req.query.role_name || req.body.role_name || null,
+    branchId:
+      req.query.branch_id ||
+      req.body.current_branch_id ||
+      req.body.branch_id ||
+      null,
+    filterBranchId: req.query.filter_branch_id || req.body.filter_branch_id || null,
+  };
+}
+
+function addTicketAccessFilter(req, params, alias = "t") {
+  const { currentUserId, roleName, branchId, filterBranchId } = getRequestContext(req);
+  const normalizedRole = String(roleName || "").toLowerCase();
+  const clauses = [];
+
+  if (normalizedRole === "superadmin") {
+    if (filterBranchId) {
+      params.push(filterBranchId);
+      clauses.push(`${alias}.branch_id = $${params.length}`);
+    }
+    return clauses;
+  }
+
+  if (normalizedRole === "employee" && currentUserId) {
+    params.push(currentUserId);
+    clauses.push(`${alias}.requester_id = $${params.length}`);
+    return clauses;
+  }
+
+  if (normalizedRole === "admin" && branchId) {
+    params.push(branchId);
+    clauses.push(`(${alias}.branch_id = $${params.length} OR ${alias}.branch_id IS NULL)`);
+  }
+
+  if (normalizedRole === "technician" && currentUserId) {
+    params.push(currentUserId);
+    const technicianParam = params.length;
+
+    if (branchId) {
+      params.push(branchId);
+      const branchParam = params.length;
+      clauses.push(`(${alias}.assigned_to = $${technicianParam} OR (${alias}.assigned_to IS NULL AND (${alias}.branch_id = $${branchParam} OR ${alias}.branch_id IS NULL)))`);
+    } else {
+      clauses.push(`(${alias}.assigned_to = $${technicianParam} OR ${alias}.assigned_to IS NULL)`);
+    }
+  }
+
+  return clauses;
+}
+
 /* ==========================
    AUTH ROUTES
 ========================== */
 
 app.use("/api/auth", authRoutes);
+app.use("/api/v1/dashboard", dashboardRoutes);
 
 /* ==========================
    HEALTH CHECK
@@ -215,6 +288,166 @@ app.get("/api/health", (req, res) => {
     success: true,
     message: "AstreaBlue API is running",
   });
+});
+
+/* ==========================
+   DASHBOARD SUMMARY
+========================== */
+
+app.get("/api/v1/dashboard/summary", async (req, res) => {
+  try {
+    const schemaResult = await db.query(
+      `
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name IN ('tickets', 'branches')
+      `
+    );
+
+    const columnsByTable = schemaResult.rows.reduce((acc, row) => {
+      if (!acc[row.table_name]) acc[row.table_name] = new Set();
+      acc[row.table_name].add(row.column_name);
+      return acc;
+    }, {});
+
+    const ticketColumns = columnsByTable.tickets || new Set();
+    const branchColumns = columnsByTable.branches || new Set();
+    const hasTicketBranch = ticketColumns.has("branch_id");
+    const canJoinBranches = hasTicketBranch && branchColumns.has("branch_id");
+    const hasBranchName = canJoinBranches && branchColumns.has("branch_name");
+    const hasBranchCode = canJoinBranches && branchColumns.has("branch_code");
+    const hasPriority = ticketColumns.has("priority");
+    const hasRequester = ticketColumns.has("requester_id");
+    const hasAssignedTo = ticketColumns.has("assigned_to");
+    const hasCreatedAt = ticketColumns.has("created_at");
+    const { currentUserId, roleName, branchId, filterBranchId } = getRequestContext(req);
+    const normalizedRole = String(roleName || "").toLowerCase();
+
+    const params = [];
+    const accessClauses = [];
+
+    if (normalizedRole === "superadmin" && filterBranchId && hasTicketBranch) {
+      params.push(filterBranchId);
+      accessClauses.push(`t.branch_id = $${params.length}`);
+    }
+
+    if (normalizedRole === "employee" && currentUserId && hasRequester) {
+      params.push(currentUserId);
+      accessClauses.push(`t.requester_id = $${params.length}`);
+    }
+
+    if (normalizedRole === "admin" && branchId && hasTicketBranch) {
+      params.push(branchId);
+      accessClauses.push(`(t.branch_id = $${params.length} OR t.branch_id IS NULL)`);
+    }
+
+    if (normalizedRole === "technician" && currentUserId) {
+      const technicianClauses = [];
+
+      if (hasAssignedTo) {
+        params.push(currentUserId);
+        technicianClauses.push(`t.assigned_to = $${params.length}`);
+      }
+
+      if (hasAssignedTo && hasTicketBranch && branchId) {
+        params.push(branchId);
+        technicianClauses.push(
+          `(t.assigned_to IS NULL AND (t.branch_id = $${params.length} OR t.branch_id IS NULL))`
+        );
+      } else if (hasAssignedTo) {
+        technicianClauses.push(`t.assigned_to IS NULL`);
+      }
+
+      if (technicianClauses.length) {
+        accessClauses.push(`(${technicianClauses.join(" OR ")})`);
+      }
+    }
+
+    const whereSql = accessClauses.length
+      ? `WHERE ${accessClauses.join(" AND ")}`
+      : "";
+    const branchJoinSql = canJoinBranches
+      ? "LEFT JOIN branches b ON t.branch_id = b.branch_id"
+      : "";
+    const branchIdSelect = hasTicketBranch ? "t.branch_id" : "NULL::integer AS branch_id";
+    const branchNameSelect = hasBranchName
+      ? "COALESCE(b.branch_name, 'Unassigned Branch') AS branch_name"
+      : "'Unassigned Branch' AS branch_name";
+    const branchCodeSelect = hasBranchCode
+      ? "b.branch_code"
+      : "NULL::text AS branch_code";
+    const prioritySelect = hasPriority ? "t.priority" : "NULL::text AS priority";
+    const criticalCountSql = hasPriority
+      ? `
+        COUNT(*) FILTER (
+          WHERE t.priority = 'P1-Critical'
+            AND t.status IN ('Open Queue', 'In Progress')
+        )::int AS critical_tickets,`
+      : "0::int AS critical_tickets,";
+    const orderBySql = hasCreatedAt
+      ? "ORDER BY t.created_at DESC"
+      : "ORDER BY t.id DESC";
+    const createdAtSelect = hasCreatedAt ? "t.created_at" : "NULL::timestamp AS created_at";
+
+    const summaryResult = await db.query(
+      `
+      SELECT
+        COUNT(*)::int AS total_tickets,
+        COUNT(*) FILTER (
+          WHERE t.status IN ('Open Queue', 'In Progress')
+        )::int AS open_tickets,
+        ${criticalCountSql}
+        COUNT(*) FILTER (
+          WHERE t.status IN ('Resolved', 'Closed')
+        )::int AS resolved_tickets
+      FROM tickets t
+      ${whereSql}
+      `,
+      params
+    );
+
+    const recentResult = await db.query(
+      `
+      SELECT
+        t.id,
+        t.ticket_number,
+        t.title,
+        ${prioritySelect},
+        t.status,
+        ${branchIdSelect},
+        ${branchNameSelect},
+        ${branchCodeSelect},
+        ${createdAtSelect}
+      FROM tickets t
+      ${branchJoinSql}
+      ${whereSql}
+      ${orderBySql}
+      LIMIT 8
+      `,
+      params
+    );
+
+    const stats = summaryResult.rows[0] || {
+      total_tickets: 0,
+      open_tickets: 0,
+      critical_tickets: 0,
+      resolved_tickets: 0,
+    };
+
+    res.json({
+      success: true,
+      stats,
+      recentTickets: recentResult.rows,
+    });
+  } catch (err) {
+    console.error("Dashboard summary error:", err);
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch dashboard summary",
+    });
+  }
 });
 
 /* ==========================
@@ -309,7 +542,11 @@ app.get("/api/v1/branches", async (req, res) => {
     const result = await db.query(`
       SELECT
         b.branch_id,
-        b.branch_name,
+        b.branch_code,
+        COALESCE(b.branch_name, 'Unassigned Branch') AS branch_name,
+        b.region,
+        b.province,
+        b.city_municipality,
         b.branch_location,
         b.is_headquarters,
         b.is_active,
@@ -347,6 +584,10 @@ app.post("/api/v1/branches", async (req, res) => {
   try {
     const {
       branch_name,
+      branch_code = null,
+      region = null,
+      province = null,
+      city_municipality = null,
       branch_location = null,
       is_active = true,
       is_headquarters = false,
@@ -362,11 +603,21 @@ app.post("/api/v1/branches", async (req, res) => {
 
     const result = await db.query(
       `
-      INSERT INTO branches (branch_name, branch_location, is_active, is_headquarters)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO branches
+      (branch_name, branch_code, region, province, city_municipality, branch_location, is_active, is_headquarters)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
       `,
-      [branch_name, branch_location, is_active, is_headquarters]
+      [
+        branch_name,
+        branch_code,
+        region,
+        province,
+        city_municipality,
+        branch_location,
+        is_active,
+        is_headquarters,
+      ]
     );
 
     if (admin_user_id) {
@@ -392,6 +643,10 @@ app.put("/api/v1/branches/:id", async (req, res) => {
     const { id } = req.params;
     const {
       branch_name,
+      branch_code = null,
+      region = null,
+      province = null,
+      city_municipality = null,
       branch_location = null,
       is_active = true,
       is_headquarters = false,
@@ -410,13 +665,27 @@ app.put("/api/v1/branches/:id", async (req, res) => {
       UPDATE branches
       SET
         branch_name = $1,
-        branch_location = $2,
-        is_active = $3,
-        is_headquarters = $4
-      WHERE branch_id = $5
+        branch_code = $2,
+        region = $3,
+        province = $4,
+        city_municipality = $5,
+        branch_location = $6,
+        is_active = $7,
+        is_headquarters = $8
+      WHERE branch_id = $9
       RETURNING *
       `,
-      [branch_name, branch_location, is_active, is_headquarters, id]
+      [
+        branch_name,
+        branch_code,
+        region,
+        province,
+        city_municipality,
+        branch_location,
+        is_active,
+        is_headquarters,
+        id,
+      ]
     );
 
     if (result.rows.length === 0) {
@@ -1173,6 +1442,12 @@ app.delete("/api/v1/knowledge-base/:id", async (req, res) => {
 
 app.get("/api/v1/tickets", async (req, res) => {
   try {
+    const params = [];
+    const accessClauses = addTicketAccessFilter(req, params, "t");
+    const whereSql = accessClauses.length
+      ? `WHERE ${accessClauses.join(" AND ")}`
+      : "";
+
     const result = await db.query(`
       SELECT
         t.id,
@@ -1194,11 +1469,18 @@ app.get("/api/v1/tickets", async (req, res) => {
         t.time_spent_minutes,
         t.parts_used,
         t.satisfaction_rating,
+        t.branch_id,
         t.created_at,
         t.updated_at,
 
         c.category_id,
         c.category_name AS category,
+
+        b.branch_code,
+        COALESCE(b.branch_name, 'Unassigned Branch') AS branch_name,
+        b.region,
+        b.province,
+        b.city_municipality,
 
         requester.user_id AS requester_id,
         requester.full_name AS requester_name,
@@ -1211,12 +1493,15 @@ app.get("/api/v1/tickets", async (req, res) => {
       FROM tickets t
       LEFT JOIN ticket_categories c
         ON t.category_id = c.category_id
+      LEFT JOIN branches b
+        ON t.branch_id = b.branch_id
       LEFT JOIN users requester
         ON t.requester_id = requester.user_id
       LEFT JOIN users assignee
         ON t.assigned_to = assignee.user_id
+      ${whereSql}
       ORDER BY t.created_at DESC
-    `);
+    `, params);
 
     res.json(result.rows);
   } catch (err) {
@@ -1232,6 +1517,11 @@ app.get("/api/v1/tickets", async (req, res) => {
 app.get("/api/v1/tickets/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const params = [id];
+    const accessClauses = addTicketAccessFilter(req, params, "t");
+    const accessSql = accessClauses.length
+      ? `AND ${accessClauses.join(" AND ")}`
+      : "";
 
     const ticketResult = await db.query(
       `
@@ -1255,11 +1545,18 @@ app.get("/api/v1/tickets/:id", async (req, res) => {
         t.time_spent_minutes,
         t.parts_used,
         t.satisfaction_rating,
+        t.branch_id,
         t.created_at,
         t.updated_at,
 
         c.category_id,
         c.category_name AS category,
+
+        b.branch_code,
+        COALESCE(b.branch_name, 'Unassigned Branch') AS branch_name,
+        b.region,
+        b.province,
+        b.city_municipality,
 
         requester.user_id AS requester_id,
         requester.full_name AS requester_name,
@@ -1272,13 +1569,16 @@ app.get("/api/v1/tickets/:id", async (req, res) => {
       FROM tickets t
       LEFT JOIN ticket_categories c
         ON t.category_id = c.category_id
+      LEFT JOIN branches b
+        ON t.branch_id = b.branch_id
       LEFT JOIN users requester
         ON t.requester_id = requester.user_id
       LEFT JOIN users assignee
         ON t.assigned_to = assignee.user_id
       WHERE t.id = $1
+        ${accessSql}
       `,
-      [id]
+      params
     );
 
     if (ticketResult.rows.length === 0) {
@@ -1315,10 +1615,15 @@ app.get("/api/v1/tickets/:id", async (req, res) => {
         th.old_value,
         th.new_value,
         th.created_at,
+        COALESCE(b.branch_name, 'Unassigned Branch') AS branch_name,
         u.user_id,
         u.full_name,
         u.email
       FROM ticket_history th
+      LEFT JOIN tickets ht
+        ON th.ticket_id = ht.id
+      LEFT JOIN branches b
+        ON ht.branch_id = b.branch_id
       LEFT JOIN users u
         ON th.changed_by = u.user_id
       WHERE th.ticket_id = $1
@@ -1502,12 +1807,33 @@ app.post("/api/v1/tickets", async (req, res) => {
       category_id = null,
       requester_id = null,
       assigned_to = null,
+      branch_id = null,
       source = "portal",
       impact = null,
       urgency = null,
+      role_name = null,
+      current_branch_id = null,
+      current_user_id = null,
     } = req.body;
 
     const finalDescription = description || desc || "";
+    const normalizedRole = String(role_name || "").toLowerCase();
+    let finalBranchId =
+      normalizedRole === "superadmin"
+        ? branch_id || null
+        : current_branch_id || branch_id || null;
+
+    if (!finalBranchId && normalizedRole !== "superadmin") {
+      const branchUserId = current_user_id || requester_id || assigned_to;
+
+      if (branchUserId) {
+        const branchResult = await db.query(
+          `SELECT branch_id FROM users WHERE user_id = $1`,
+          [branchUserId]
+        );
+        finalBranchId = branchResult.rows[0]?.branch_id || null;
+      }
+    }
 
     if (!title || !finalDescription) {
       return res.status(400).json({
@@ -1544,13 +1870,14 @@ app.post("/api/v1/tickets", async (req, res) => {
         category_id,
         requester_id,
         assigned_to,
+        branch_id,
         source,
         impact,
         urgency,
         sla_due_date
       )
       VALUES
-      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
       RETURNING
         id,
         ticket_number,
@@ -1563,6 +1890,7 @@ app.post("/api/v1/tickets", async (req, res) => {
         impact,
         urgency,
         sla_due_date,
+        branch_id,
         created_at,
         updated_at
       `,
@@ -1575,12 +1903,20 @@ app.post("/api/v1/tickets", async (req, res) => {
         category_id,
         requester_id,
         assigned_to,
+        finalBranchId,
         source,
         impact,
         urgency,
         slaDueDate,
       ]
     );
+
+    const branchResult = finalBranchId
+      ? await db.query(`SELECT branch_name FROM branches WHERE branch_id = $1`, [
+          finalBranchId,
+        ])
+      : { rows: [] };
+    const branchName = branchResult.rows[0]?.branch_name || "Unassigned Branch";
 
     await db.query(
       `
@@ -1593,7 +1929,7 @@ app.post("/api/v1/tickets", async (req, res) => {
         requester_id,
         "Ticket Created",
         null,
-        result.rows[0].status,
+        `Ticket filed from ${branchName}`,
       ]
     );
 
@@ -1632,9 +1968,15 @@ app.put("/api/v1/tickets/:id", async (req, res) => {
       changed_by = null,
     } = req.body;
 
+    const existingParams = [id];
+    const accessClauses = addTicketAccessFilter(req, existingParams, "t");
+    const accessSql = accessClauses.length
+      ? `AND ${accessClauses.join(" AND ")}`
+      : "";
+
     const existingResult = await db.query(
-      `SELECT * FROM tickets WHERE id = $1`,
-      [id]
+      `SELECT * FROM tickets t WHERE t.id = $1 ${accessSql}`,
+      existingParams
     );
 
     if (existingResult.rows.length === 0) {
@@ -1766,9 +2108,15 @@ app.patch("/api/v1/tickets/:id/assign", async (req, res) => {
     const { id } = req.params;
     const { assigned_to, changed_by = null } = req.body;
 
+    const existingParams = [id];
+    const accessClauses = addTicketAccessFilter(req, existingParams, "t");
+    const accessSql = accessClauses.length
+      ? `AND ${accessClauses.join(" AND ")}`
+      : "";
+
     const existingResult = await db.query(
-      `SELECT assigned_to FROM tickets WHERE id = $1`,
-      [id]
+      `SELECT assigned_to FROM tickets t WHERE t.id = $1 ${accessSql}`,
+      existingParams
     );
 
     if (existingResult.rows.length === 0) {

@@ -10,8 +10,9 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { API_URL } from "../config/api";
 
-const API_BASE = "http://localhost:5000/api/v1";
+const API_BASE = `${API_URL}/api/v1`;
 
 const emptyArticle = {
   title: "",

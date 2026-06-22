@@ -1,12 +1,13 @@
 // frontend/src/components/NewTicketForm.jsx
 import { useState } from 'react';
+import { API_URL } from '../config/api';
 
 export default function NewTicketForm({ onTicketCreated }) {
   const [formData, setFormData] = useState({ title: '', description: '', raised_by: '' });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const response = await fetch("http://localhost:5000/api/v1/tickets", {
+    const response = await fetch(`${API_URL}/api/v1/tickets`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(formData),
