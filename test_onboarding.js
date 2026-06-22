@@ -15,7 +15,7 @@ async function runMockOnboardingTest() {
 
   try {
     // Make an asynchronous HTTP POST request to your live local Express server
-    const response = await fetch("http://localhost:5000/api/v1/compliance/consent", {
+    const response = await fetch("http://localhost:5001/api/v1/compliance/consent", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

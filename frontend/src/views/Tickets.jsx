@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
-const API_BASE = "http://localhost:5000/api/v1";
+const API_BASE = "http://localhost:5001/api/v1";
 
 const columns = [
   { id: "Open Queue", label: "Open Queue", color: "bg-sky-500" },
@@ -407,7 +407,7 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
         (entry) => entry.attachment_id === attachmentId
       );
       if (!attachment?.file_path) throw new Error("Attachment file path not found");
-      window.open(`http://localhost:5000${attachment.file_path}`, "_blank", "noopener,noreferrer");
+      window.open(`http://localhost:5001${attachment.file_path}`, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error(err);
     }
