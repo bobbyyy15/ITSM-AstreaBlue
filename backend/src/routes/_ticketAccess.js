@@ -1,18 +1,20 @@
 function getRequestContext(req) {
+  const body = req.body || {};
+
   return {
     currentUserId:
       req.query.current_user_id ||
-      req.body.current_user_id ||
+      body.current_user_id ||
       req.query.user_id ||
-      req.body.user_id ||
+      body.user_id ||
       null,
-    roleName: req.query.role_name || req.body.role_name || null,
+    roleName: req.query.role_name || body.role_name || null,
     branchId:
       req.query.branch_id ||
-      req.body.current_branch_id ||
-      req.body.branch_id ||
+      body.current_branch_id ||
+      body.branch_id ||
       null,
-    filterBranchId: req.query.filter_branch_id || req.body.filter_branch_id || null,
+    filterBranchId: req.query.filter_branch_id || body.filter_branch_id || null,
   };
 }
 

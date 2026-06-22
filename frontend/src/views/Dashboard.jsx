@@ -9,9 +9,7 @@ import {
   BarChart3,
   Clock,
 } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
 import { API_URL } from "../config/api";
-import { buildTicketQuery } from "../utils/ticketAccess";
 
 const API_BASE = `${API_URL}/api/v1`;
 
@@ -52,12 +50,13 @@ function KPICard({ item }) {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
   const [summary, setSummary] = useState({
-    open_tickets: 0,
-    critical_tickets: 0,
-    resolved_tickets: 0,
-    total_tickets: 0,
+    openTickets: 0,
+    inProgressTickets: 0,
+    resolvedTickets: 0,
+    closedTickets: 0,
+    criticalTickets: 0,
+    totalTickets: 0,
   });
   const [recentTickets, setRecentTickets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,9 +67,7 @@ export default function Dashboard() {
       setLoading(true);
       setError("");
 
-      const res = await fetch(
-        `${API_BASE}/dashboard/summary${buildTicketQuery(user)}`
-      );
+      const res = await fetch(`${API_BASE}/dashboard/summary`);
       const data = await res.json();
 
       if (!res.ok) {
@@ -90,7 +87,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     fetchSummary();
@@ -100,35 +97,53 @@ export default function Dashboard() {
     () => [
       {
         title: "Open Tickets",
-        value: summary.open_tickets || 0,
-        subtitle: "Active service desk workload",
+        value: summary.openTickets || 0,
+        subtitle: "Open Queue tickets",
         icon: Ticket,
         accent: "#2563EB",
         bg: "#EFF6FF",
         color: "#2563EB",
       },
       {
+        title: "In Progress",
+        value: summary.inProgressTickets || 0,
+        subtitle: "Tickets currently being worked",
+        icon: Clock,
+        accent: "#0EA5E9",
+        bg: "#F0F9FF",
+        color: "#0284C7",
+      },
+      {
         title: "Critical Tickets",
-        value: summary.critical_tickets || 0,
+        value: summary.criticalTickets || 0,
         subtitle: "P1 tickets still needing attention",
         icon: AlertCircle,
         accent: "#EF4444",
         bg: "#FEF2F2",
         color: "#DC2626",
-        alert: Number(summary.critical_tickets || 0) > 0,
+        alert: Number(summary.criticalTickets || 0) > 0,
       },
       {
         title: "Resolved Tickets",
-        value: summary.resolved_tickets || 0,
-        subtitle: "Resolved or closed tickets",
+        value: summary.resolvedTickets || 0,
+        subtitle: "Resolved tickets",
         icon: CheckCircle,
         accent: "#10B981",
         bg: "#ECFDF5",
         color: "#059669",
       },
       {
+        title: "Closed Tickets",
+        value: summary.closedTickets || 0,
+        subtitle: "Accepted and closed tickets",
+        icon: CheckCircle,
+        accent: "#64748B",
+        bg: "#F1F5F9",
+        color: "#475569",
+      },
+      {
         title: "Total Tickets",
-        value: summary.total_tickets || 0,
+        value: summary.totalTickets || 0,
         subtitle: "All visible tickets",
         icon: Activity,
         accent: "#8B5CF6",
@@ -140,10 +155,12 @@ export default function Dashboard() {
   );
 
   const chartValues = [
-    { label: "Open", value: Number(summary.open_tickets || 0) },
-    { label: "Critical", value: Number(summary.critical_tickets || 0) },
-    { label: "Resolved", value: Number(summary.resolved_tickets || 0) },
-    { label: "Total", value: Number(summary.total_tickets || 0) },
+    { label: "Open", value: Number(summary.openTickets || 0) },
+    { label: "Progress", value: Number(summary.inProgressTickets || 0) },
+    { label: "Critical", value: Number(summary.criticalTickets || 0) },
+    { label: "Resolved", value: Number(summary.resolvedTickets || 0) },
+    { label: "Closed", value: Number(summary.closedTickets || 0) },
+    { label: "Total", value: Number(summary.totalTickets || 0) },
   ];
   const maxChartValue = Math.max(...chartValues.map((item) => item.value), 1);
 
