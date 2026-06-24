@@ -572,7 +572,8 @@ router.patch("/:id/assign", async (req, res) => {
         t.branch_id,
         COALESCE(b.branch_name, 'Unassigned Branch') AS branch_name
       FROM tickets t
-      LEFT JOIN branches b ON t.branch_id = b.branch_id
+      LEFT JOIN branches b
+        ON t.branch_id = b.branch_id
       WHERE t.id = $1 ${accessSql}
       `,
       existingParams
@@ -596,8 +597,10 @@ router.patch("/:id/assign", async (req, res) => {
           u.branch_id,
           COALESCE(b.branch_name, 'Unassigned Branch') AS branch_name
         FROM users u
-        JOIN system_roles sr ON u.role_id = sr.role_id
-        LEFT JOIN branches b ON u.branch_id = b.branch_id
+        JOIN system_roles sr
+          ON u.role_id = sr.role_id
+        LEFT JOIN branches b
+          ON u.branch_id = b.branch_id
         WHERE u.user_id = $1
           AND LOWER(sr.role_name) = 'technician'
           AND COALESCE(u.is_active, TRUE) = TRUE
@@ -614,21 +617,24 @@ router.patch("/:id/assign", async (req, res) => {
 
       const technician = technicianResult.rows[0];
 
-      if (
-        ticket.branch_id &&
-        technician.branch_id &&
-        Number(ticket.branch_id) !== Number(technician.branch_id)
-      ) {
+      if (!ticket.branch_id) {
         return res.status(400).json({
           success: false,
-          error: `Technician must belong to the same branch as the ticket. Ticket branch: ${ticket.branch_name}, Technician branch: ${technician.branch_name}`,
+          error: "Ticket has no assigned branch",
         });
       }
 
-      if (ticket.branch_id && !technician.branch_id) {
+      if (!technician.branch_id) {
         return res.status(400).json({
           success: false,
           error: "Technician has no assigned branch",
+        });
+      }
+
+      if (Number(ticket.branch_id) !== Number(technician.branch_id)) {
+        return res.status(400).json({
+          success: false,
+          error: `Technician must belong to the same branch as the ticket. Ticket branch: ${ticket.branch_name}, Technician branch: ${technician.branch_name}`,
         });
       }
     }

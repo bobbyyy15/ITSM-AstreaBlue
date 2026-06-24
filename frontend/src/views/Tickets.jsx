@@ -308,15 +308,24 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
     }
   }, [ticket.id]);
 
-  const fetchTechnicians = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/technicians`);
-      const data = await res.json();
-      setTechnicians(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Fetch technicians failed:", err);
+const fetchTechnicians = useCallback(async () => {
+  try {
+    const branchId = details?.branch_id || ticket.branch_id;
+
+    if (!branchId) {
+      setTechnicians([]);
+      return;
     }
-  }, []);
+
+    const res = await fetch(`${API_BASE}/technicians?branch_id=${branchId}`);
+    const data = await res.json();
+
+    setTechnicians(Array.isArray(data) ? data : []);
+  } catch (err) {
+    console.error("Fetch technicians failed:", err);
+    setTechnicians([]);
+  }
+}, [details?.branch_id, ticket.branch_id]);
 
   useEffect(() => {
     fetchDetails();
@@ -505,22 +514,28 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
               </h3>
 
               <div>
-                <select
-                  value={selectedTechnician}
-                  onChange={(e) => setSelectedTechnician(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-600"
-                  style={{ color: "#0f172a" }}
-                >
-                  <option value="" style={{ color: "#0f172a" }}>
-                    Unassigned
-                  </option>
+                {technicians.length === 0 ? (
+  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
+    No technician available for this branch.
+  </div>
+) : (
+  <select
+    value={selectedTechnician}
+    onChange={(e) => setSelectedTechnician(e.target.value)}
+    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-600"
+    style={{ color: "#0f172a" }}
+  >
+    <option value="" style={{ color: "#0f172a" }}>
+      Unassigned
+    </option>
 
-                  {technicians.map((tech) => (
-                    <option key={tech.user_id} value={tech.user_id}>
-                      {tech.full_name} — {tech.email}
-                    </option>
-                  ))}
-                </select>
+    {technicians.map((tech) => (
+      <option key={tech.user_id} value={tech.user_id}>
+        {tech.full_name} — {tech.email} ({tech.branch_name})
+      </option>
+    ))}
+  </select>
+)}
               </div>
 
               <div className="rounded-2xl bg-blue-50 p-4">
