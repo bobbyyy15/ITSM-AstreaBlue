@@ -1,11 +1,12 @@
 const normalizeRole = (role = "") => {
-  return role.toLowerCase().replace(/[\s_-]/g, "");
+  return role.toString().toLowerCase().replace(/[\s_-]/g, "");
 };
 
-const isSuperAdmin = (role = "") => {
-  const normalized = normalizeRole(role);
-  return normalized === "superadmin";
-};
+const isSuperAdmin = (role = "") => normalizeRole(role) === "superadmin";
+const isAdmin = (role = "") => normalizeRole(role) === "admin";
+const isTechnician = (role = "") => normalizeRole(role) === "technician";
+const isServiceRequestRole = (role = "") =>
+  isSuperAdmin(role) || isAdmin(role) || isTechnician(role);
 
 export const scopeMiddleware = (req, res, next) => {
   const role = req.user?.role;
@@ -13,6 +14,12 @@ export const scopeMiddleware = (req, res, next) => {
 
   if (!role) {
     return res.status(403).json({ message: "User role is missing" });
+  }
+
+  if (!isServiceRequestRole(role)) {
+    return res.status(403).json({
+      message: "Access denied. User is not permitted to access service request resources.",
+    });
   }
 
   if (isSuperAdmin(role)) {

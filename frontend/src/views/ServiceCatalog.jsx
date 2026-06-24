@@ -374,7 +374,9 @@ export default function ServiceCatalog() {
       <section className="rounded-3xl bg-gradient-to-r from-slate-950 via-blue-950 to-blue-800 p-7 text-white shadow-xl">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-black">Service Request Management</h1>
+            <h1 className="text-3xl font-black">
+              {branchLabel ? "Branch Service Request Management" : "Service Request Management"}
+            </h1>
             <p className="mt-2 text-sm text-blue-200">
               {branchLabel
                 ? `Showing requests for ${branchLabel} branch.`

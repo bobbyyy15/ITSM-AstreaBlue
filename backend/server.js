@@ -1916,6 +1916,19 @@ function isSuperAdmin(role) {
   return normalizeRole(role) === "superadmin";
 }
 
+function isAdmin(role) {
+  return normalizeRole(role) === "admin";
+}
+
+function isTechnician(role) {
+  return normalizeRole(role) === "technician";
+}
+
+function isServiceRequestRole(role) {
+  const normalized = normalizeRole(role);
+  return normalized === "superadmin" || normalized === "admin" || normalized === "technician";
+}
+
 // Decode the Bearer JWT and attach user context. Does NOT abort — falls through
 // so endpoints can decide whether auth is required.
 function decodeRequestUser(req) {
@@ -1929,10 +1942,11 @@ function decodeRequestUser(req) {
   }
 }
 
-// Returns { clause, params } or { forbidden: true }
+// Returns { clause, params } or { forbidden: true, unauthorized: true }
 // startIndex is the $N index for the first new param.
 function buildRequestScope(user, startIndex = 1) {
-  if (!user) return { clause: "", params: [] }; // no auth = dev/open; tighten in prod
+  if (!user) return { unauthorized: true };
+  if (!isServiceRequestRole(user.role)) return { forbidden: true };
   if (isSuperAdmin(user.role)) return { clause: "", params: [] };
   if (!user.branchId) return { forbidden: true };
   return {
@@ -1946,8 +1960,11 @@ app.get("/api/v1/requests", async (req, res) => {
   try {
     const user = decodeRequestUser(req);
     const scope = buildRequestScope(user, 1);
+    if (scope.unauthorized) {
+      return res.status(401).json({ success: false, error: "Authentication required." });
+    }
     if (scope.forbidden) {
-      return res.status(403).json({ success: false, error: "No branch assigned to your account." });
+      return res.status(403).json({ success: false, error: "Access denied for your role or branch." });
     }
 
     const { category, search } = req.query;
@@ -2019,8 +2036,11 @@ app.get("/api/v1/requests/popular", async (req, res) => {
   try {
     const user = decodeRequestUser(req);
     const scope = buildRequestScope(user, 1);
+    if (scope.unauthorized) {
+      return res.status(401).json({ success: false, error: "Authentication required." });
+    }
     if (scope.forbidden) {
-      return res.status(403).json({ success: false, error: "No branch assigned to your account." });
+      return res.status(403).json({ success: false, error: "Access denied for your role or branch." });
     }
 
     const whereString = scope.clause ? `WHERE ${scope.clause}` : "";
@@ -2051,8 +2071,11 @@ app.get("/api/v1/requests/:id", async (req, res) => {
   try {
     const user = decodeRequestUser(req);
     const scope = buildRequestScope(user, 2); // $1 = ticket id, $2 = branchId
+    if (scope.unauthorized) {
+      return res.status(401).json({ success: false, error: "Authentication required." });
+    }
     if (scope.forbidden) {
-      return res.status(403).json({ success: false, error: "No branch assigned to your account." });
+      return res.status(403).json({ success: false, error: "Access denied for your role or branch." });
     }
 
     const queryParams = [req.params.id, ...scope.params];

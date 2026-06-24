@@ -160,7 +160,7 @@ export default function App() {
         <Route
           path="/service-requests"
           element={
-            <ProtectedRoute allowedRoles={["SuperAdmin", "Admin"]}>
+            <ProtectedRoute allowedRoles={["SuperAdmin", "Admin", "Technician"]}>
               <ServiceCatalog />
             </ProtectedRoute>
           }
