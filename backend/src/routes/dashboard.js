@@ -3,23 +3,60 @@ const db = require("../../config/db");
 
 const router = express.Router();
 
+function getAccessFilter(req) {
+  const role = String(req.query.role_name || "").toLowerCase();
+  const branchId = req.query.current_branch_id || req.query.branch_id;
+  const userId = req.query.current_user_id || req.query.user_id;
+
+  const params = [];
+
+  if (role === "superadmin") {
+    return { whereSql: "", params };
+  }
+
+  if ((role === "admin" || role === "technician") && branchId) {
+    params.push(branchId);
+    return {
+      whereSql: `WHERE t.branch_id = $${params.length}`,
+      params,
+    };
+  }
+
+  if (role === "employee" && userId) {
+    params.push(userId);
+    return {
+      whereSql: `WHERE t.requester_id = $${params.length}`,
+      params,
+    };
+  }
+
+  return { whereSql: "", params };
+}
+
 router.get("/summary", async (req, res) => {
   try {
-    const statsResult = await db.query(`
+    const { whereSql, params } = getAccessFilter(req);
+
+    const statsResult = await db.query(
+      `
       SELECT
         COUNT(*)::int AS total_tickets,
-        COUNT(*) FILTER (WHERE status = 'Open Queue')::int AS open_tickets,
-        COUNT(*) FILTER (WHERE status = 'In Progress')::int AS in_progress_tickets,
+        COUNT(*) FILTER (WHERE t.status = 'Open Queue')::int AS open_tickets,
+        COUNT(*) FILTER (WHERE t.status = 'In Progress')::int AS in_progress_tickets,
         COUNT(*) FILTER (
-          WHERE priority = 'P1-Critical'
-            AND status IN ('Open Queue', 'In Progress')
+          WHERE t.priority = 'P1-Critical'
+            AND t.status IN ('Open Queue', 'In Progress')
         )::int AS critical_tickets,
-        COUNT(*) FILTER (WHERE status = 'Resolved')::int AS resolved_tickets,
-        COUNT(*) FILTER (WHERE status = 'Closed')::int AS closed_tickets
-      FROM tickets
-    `);
+        COUNT(*) FILTER (WHERE t.status = 'Resolved')::int AS resolved_tickets,
+        COUNT(*) FILTER (WHERE t.status = 'Closed')::int AS closed_tickets
+      FROM tickets t
+      ${whereSql}
+      `,
+      params
+    );
 
-    const recentResult = await db.query(`
+    const recentResult = await db.query(
+      `
       SELECT
         t.id,
         t.ticket_number,
@@ -32,9 +69,12 @@ router.get("/summary", async (req, res) => {
       FROM tickets t
       LEFT JOIN branches b
         ON t.branch_id = b.branch_id
+      ${whereSql}
       ORDER BY t.created_at DESC
       LIMIT 10
-    `);
+      `,
+      params
+    );
 
     const stats = statsResult.rows[0] || {};
 
@@ -51,7 +91,8 @@ router.get("/summary", async (req, res) => {
       recentTickets: recentResult.rows,
     });
   } catch (err) {
-    console.error("Dashboard summary error:", err);
+    console.error("Dashboard summary error:", err.message);
+
     res.status(500).json({
       success: false,
       error: "Failed to fetch dashboard summary",

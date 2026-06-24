@@ -10,6 +10,8 @@ import {
   Clock,
 } from "lucide-react";
 import { API_URL } from "../config/api";
+import { useAuth } from "../context/AuthContext";
+import { buildTicketQuery } from "../utils/ticketAccess";
 
 const API_BASE = `${API_URL}/api/v1`;
 
@@ -50,6 +52,7 @@ function KPICard({ item }) {
 }
 
 export default function Dashboard() {
+const { user } = useAuth();
   const [summary, setSummary] = useState({
     openTickets: 0,
     inProgressTickets: 0,
@@ -67,7 +70,7 @@ export default function Dashboard() {
       setLoading(true);
       setError("");
 
-      const res = await fetch(`${API_BASE}/dashboard/summary`);
+      const res = await fetch(`${API_BASE}/dashboard/summary${buildTicketQuery(user)}`);
       const data = await res.json();
 
       if (!res.ok) {
@@ -87,7 +90,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchSummary();
