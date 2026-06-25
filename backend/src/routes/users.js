@@ -8,7 +8,13 @@ async function ensureUserStatusColumn() {
   try {
     await db.query(`
       ALTER TABLE users
-      ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Active'
+      ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Active',
+      ADD COLUMN IF NOT EXISTS personal_email VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS company_email VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS invite_token VARCHAR(120),
+      ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS invite_used_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS invite_status VARCHAR(20)
     `);
   } catch (err) {
     console.error("User status column setup error:", err.message);
@@ -48,6 +54,8 @@ router.get("/", async (req, res) => {
         u.user_id,
         u.full_name,
         u.email,
+        u.personal_email,
+        u.company_email,
         u.company_name,
         u.mobile_number,
         u.branch_id,
@@ -84,6 +92,8 @@ router.post("/", async (req, res) => {
     const {
       full_name,
       email,
+      personal_email = null,
+      company_email = null,
       password,
       password_hash,
       role_id,
@@ -108,13 +118,15 @@ router.post("/", async (req, res) => {
     const result = await db.query(
       `
       INSERT INTO users
-      (full_name, email, password_hash, role_id, company_name, branch_id, mobile_number, status, is_active)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING user_id, full_name, email, company_name, branch_id, mobile_number, role_id, status, is_active, created_at
+      (full_name, email, personal_email, company_email, password_hash, role_id, company_name, branch_id, mobile_number, status, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING user_id, full_name, email, personal_email, company_email, company_name, branch_id, mobile_number, role_id, status, is_active, created_at
       `,
       [
         full_name,
         email,
+        personal_email,
+        company_email,
         finalPassword,
         role_id,
         company_name,
@@ -149,6 +161,8 @@ router.put("/:id", async (req, res) => {
     const {
       full_name,
       email,
+      personal_email = null,
+      company_email = null,
       role_id,
       company_name = null,
       branch_id = null,
@@ -172,18 +186,22 @@ router.put("/:id", async (req, res) => {
       SET
         full_name = $1,
         email = $2,
-        role_id = $3,
-        company_name = $4,
-        status = $5,
-        is_active = $6,
-        branch_id = $7,
-        mobile_number = $8
-      WHERE user_id = $9
-      RETURNING user_id, full_name, email, company_name, branch_id, mobile_number, role_id, status, is_active, created_at
+        personal_email = $3,
+        company_email = $4,
+        role_id = $5,
+        company_name = $6,
+        status = $7,
+        is_active = $8,
+        branch_id = $9,
+        mobile_number = $10
+      WHERE user_id = $11
+      RETURNING user_id, full_name, email, personal_email, company_email, company_name, branch_id, mobile_number, role_id, status, is_active, created_at
       `,
       [
         full_name,
         email,
+        personal_email,
+        company_email,
         role_id,
         company_name,
         finalIsActive ? "Active" : "Inactive",

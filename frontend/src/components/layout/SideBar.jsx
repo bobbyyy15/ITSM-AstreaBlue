@@ -110,6 +110,17 @@ const coreModuleItems = [
   },
 ];
 
+const adminCoreModuleItems = coreModuleItems.map((item) => {
+  if (item.label !== "System Administration") return item;
+
+  return {
+    ...item,
+    children: item.children.filter(
+      (child) => child.label !== "Branch Management"
+    ),
+  };
+});
+
 const technicianNavItems = [
   { label: "Dashboard", icon: LayoutDashboard, path: "/technician/dashboard" },
   {
@@ -151,15 +162,26 @@ function getDashboardPath(role) {
 
 function getVisibleNavItems(role) {
   const normalizedRole = String(role || "").toLowerCase();
+
   const dashboard = {
     label: "Dashboard",
     icon: LayoutDashboard,
     path: getDashboardPath(role),
   };
 
-  if (normalizedRole === "technician") return technicianNavItems;
-  if (normalizedRole === "employee") return employeeNavItems;
+  if (normalizedRole === "technician") {
+    return technicianNavItems;
+  }
 
+  if (normalizedRole === "employee") {
+    return employeeNavItems;
+  }
+
+  if (normalizedRole === "admin") {
+    return [dashboard, ...adminCoreModuleItems];
+  }
+
+  // SuperAdmin
   return [dashboard, ...coreModuleItems];
 }
 

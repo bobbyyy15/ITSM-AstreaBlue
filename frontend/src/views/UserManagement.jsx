@@ -16,6 +16,8 @@ const API_BASE = `${API_URL}/api/v1`;
 const emptyForm = {
   full_name: "",
   email: "",
+  personal_email: "",
+  company_email: "",
   password: "",
   role_id: "",
   company_name: "",
@@ -152,7 +154,14 @@ export default function UserManagement() {
 
         <div className="flex flex-wrap gap-3">
           <button
-            onClick={() => setFormUser({ ...emptyForm, inviteMode: true })}
+            onClick={() =>
+              setFormUser({
+                ...emptyForm,
+                inviteMode: true,
+                branch_id: isSuperAdmin ? "" : user?.branch_id || "",
+                company_name: user?.company_name || "",
+              })
+            }
             className="flex items-center justify-center gap-2 rounded-xl bg-blue-100 px-5 py-3 font-black text-blue-800 shadow-lg hover:bg-blue-50"
           >
             <Plus size={18} />
@@ -315,7 +324,9 @@ export default function UserManagement() {
           roles={allowedRoles}
           branches={branches}
           isSuperAdmin={isSuperAdmin}
+          activeRole={activeRole}
           currentBranchId={user?.branch_id}
+          currentUserId={user?.user_id}
           onClose={() => setFormUser(null)}
           onSaved={() => {
             setFormUser(null);
@@ -364,13 +375,16 @@ function UserFormModal({
   roles,
   branches,
   isSuperAdmin,
+  activeRole,
   currentBranchId,
+  currentUserId,
   onClose,
   onSaved,
 }) {
   const [form, setForm] = useState(user);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
   const isEditing = Boolean(user.user_id);
   const isInvite = Boolean(user.inviteMode);
 
@@ -382,7 +396,12 @@ function UserFormModal({
     e.preventDefault();
     setError("");
 
-    if (!form.full_name || !form.email || !form.role_id || (!isEditing && !isInvite && !form.password)) {
+    if (isInvite && (!form.personal_email || !form.role_id || !(isSuperAdmin ? form.branch_id : currentBranchId))) {
+      setError("Personal email, role, and branch are required.");
+      return;
+    }
+
+    if (!isInvite && (!form.full_name || !form.email || !form.role_id || (!isEditing && !form.password))) {
       setError("Full name, email, role, and temporary password are required.");
       return;
     }
@@ -393,7 +412,7 @@ function UserFormModal({
       const finalBranchId = isSuperAdmin ? form.branch_id : currentBranchId;
       const res = await fetch(
         isInvite
-          ? `${API_BASE}/users/invite`
+          ? `${API_BASE}/invites`
           : isEditing
           ? `${API_BASE}/users/${user.user_id}`
           : `${API_BASE}/users`,
@@ -402,13 +421,19 @@ function UserFormModal({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             full_name: form.full_name,
-            email: form.email,
+            email: form.email || form.company_email || form.personal_email,
+            personal_email: form.personal_email || null,
+            company_email: form.company_email || null,
             password: form.password,
             role_id: Number(form.role_id),
             company_name: form.company_name || null,
             branch_id: finalBranchId ? Number(finalBranchId) : null,
             mobile_number: form.mobile_number || null,
             status: form.status || "Active",
+            current_role: activeRole,
+            current_branch_id: currentBranchId || null,
+            current_user_id: currentUserId || null,
+            app_origin: window.location.origin,
           }),
         }
       );
@@ -417,8 +442,9 @@ function UserFormModal({
 
       if (!res.ok) throw new Error(data.error || "Failed to save user.");
 
-      if (isInvite && data.invite_link) {
-        window.alert(`Invite link created:\n${data.invite_link}`);
+      if (isInvite) {
+        setInviteLink(data.invite_link || "");
+        return;
       }
 
       onSaved();
@@ -438,7 +464,9 @@ function UserFormModal({
               {isInvite ? "Invite User" : isEditing ? "Edit User" : "Add User"}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Configure account profile, branch, role, and access status.
+              {isInvite
+                ? "Generate a one-time registration link for a personal email."
+                : "Configure account profile, branch, role, and access status."}
             </p>
           </div>
           <button
@@ -456,9 +484,40 @@ function UserFormModal({
             </div>
           )}
 
+          {inviteLink && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+              <p>Invite link created.</p>
+              <div className="mt-3 flex flex-col gap-2 rounded-xl bg-white p-3 text-slate-700 md:flex-row md:items-center">
+                <span className="flex-1 break-all">{inviteLink}</span>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(inviteLink)}
+                  className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Field label="Full Name" value={form.full_name} onChange={(value) => updateForm("full_name", value)} />
-            <Field label="Email" value={form.email} onChange={(value) => updateForm("email", value)} />
+            {isInvite ? (
+              <>
+                <Field
+                  label="Personal Email"
+                  value={form.personal_email}
+                  onChange={(value) => updateForm("personal_email", value)}
+                />
+                <Field
+                  label="Company Email"
+                  value={form.company_email}
+                  onChange={(value) => updateForm("company_email", value)}
+                />
+              </>
+            ) : (
+              <Field label="Email" value={form.email} onChange={(value) => updateForm("email", value)} />
+            )}
             {!isEditing && !isInvite && (
               <Field
                 label="Temporary Password"
@@ -521,7 +580,7 @@ function UserFormModal({
               disabled={saving}
               className="rounded-xl bg-blue-700 px-6 py-3 font-bold text-white shadow-lg shadow-blue-700/20 hover:bg-blue-800 disabled:opacity-60"
             >
-              {saving ? "Saving..." : "Save User"}
+              {saving ? "Saving..." : isInvite ? "Generate Invite Link" : "Save User"}
             </button>
           </div>
         </form>

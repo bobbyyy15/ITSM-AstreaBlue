@@ -1,6 +1,21 @@
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
 const db = require("../../config/db");
+
+function passwordMatches(inputPassword, storedPassword) {
+  if (!storedPassword) return false;
+
+  if (storedPassword.startsWith("sha256$")) {
+    const hash = crypto
+      .createHash("sha256")
+      .update(inputPassword || "")
+      .digest("hex");
+    return storedPassword === `sha256$${hash}`;
+  }
+
+  return inputPassword === storedPassword;
+}
 
 router.post("/login", async (req, res) => {
   try {
@@ -44,7 +59,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    if (password !== user.password_hash) {
+    if (!passwordMatches(password, user.password_hash)) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",

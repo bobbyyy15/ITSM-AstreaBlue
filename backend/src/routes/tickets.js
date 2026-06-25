@@ -41,6 +41,9 @@ router.get("/", async (req, res) => {
         t.first_response_at,
         t.resolved_at,
         t.closed_at,
+        t.cancelled_at,
+        t.cancelled_by,
+        t.cancellation_reason,
         t.resolution_notes,
         t.root_cause,
         t.time_spent_minutes,
@@ -117,6 +120,9 @@ router.get("/:id", async (req, res) => {
         t.first_response_at,
         t.resolved_at,
         t.closed_at,
+        t.cancelled_at,
+        t.cancelled_by,
+        t.cancellation_reason,
         t.resolution_notes,
         t.root_cause,
         t.time_spent_minutes,
@@ -726,44 +732,101 @@ router.post("/:id/comments", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.patch("/:id/cancel", async (req, res) => {
   try {
     const { id } = req.params;
-    const roleName = String(req.query.role_name || req.body?.role_name || "").toLowerCase();
 
-    if (roleName !== "superadmin") {
-      return res.status(403).json({
+    const roleName = String(
+      req.query.role_name || req.body?.role_name || ""
+    ).toLowerCase();
+
+    const currentBranchId =
+      req.query.current_branch_id || req.body?.current_branch_id;
+
+    const cancelledBy =
+      req.query.current_user_id || req.body?.current_user_id || null;
+
+    const reason = req.body?.cancellation_reason || req.body?.reason || "";
+
+    if (!reason.trim()) {
+      return res.status(400).json({
         success: false,
-        error: "Only SuperAdmin can delete tickets",
+        error: "Cancellation reason is required.",
       });
     }
 
-    const result = await db.query(
-      `
-      DELETE FROM tickets
-      WHERE id = $1
-      RETURNING id
-      `,
-      [id]
-    );
+    if (roleName === "technician" || roleName === "employee") {
+      return res.status(403).json({
+        success: false,
+        error: "You are not allowed to cancel tickets.",
+      });
+    }
+
+    let result;
+
+    if (roleName === "superadmin") {
+      result = await db.query(
+        `
+        UPDATE tickets
+        SET
+          status = 'Cancelled',
+          cancelled_at = NOW(),
+          cancelled_by = $1,
+          cancellation_reason = $2
+        WHERE id = $3
+        RETURNING *
+        `,
+        [cancelledBy, reason, id]
+      );
+    } else if (roleName === "admin") {
+      result = await db.query(
+        `
+        UPDATE tickets
+        SET
+          status = 'Cancelled',
+          cancelled_at = NOW(),
+          cancelled_by = $1,
+          cancellation_reason = $2
+        WHERE id = $3
+          AND branch_id = $4
+        RETURNING *
+        `,
+        [cancelledBy, reason, id, currentBranchId]
+      );
+    } else {
+      return res.status(403).json({
+        success: false,
+        error: "Unauthorized.",
+      });
+    }
 
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        error: "Ticket not found",
+        error: "Ticket not found or outside your branch.",
       });
     }
 
+    await db.query(
+      `
+      INSERT INTO ticket_history
+      (ticket_id, changed_by, action, old_value, new_value)
+      VALUES ($1, $2, $3, $4, $5)
+      `,
+      [id, cancelledBy, "Ticket Cancelled", null, reason]
+    );
+
     res.json({
       success: true,
-      message: "Ticket deleted successfully",
+      message: "Ticket cancelled successfully.",
+      ticket: result.rows[0],
     });
   } catch (err) {
-    console.error("Delete ticket error:", err.message);
+    console.error("Cancel ticket error:", err.message);
 
     res.status(500).json({
       success: false,
-      error: "Failed to delete ticket",
+      error: "Failed to cancel ticket",
     });
   }
 });
