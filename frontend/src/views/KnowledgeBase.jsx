@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   BookOpen,
+  ChevronDown,
   Edit3,
   FileText,
   Plus,
@@ -295,9 +296,9 @@ export default function KnowledgeBase() {
 
 function ArticleDrawer({ article, canManage, onClose, onEdit, onDelete }) {
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/70 backdrop-blur-sm">
-      <div className="flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl">
-        <div className="border-b border-slate-200 bg-white px-7 py-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="shrink-0 border-b border-slate-200 bg-white px-7 py-5">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-widest text-blue-600">
@@ -353,7 +354,7 @@ function ArticleDrawer({ article, canManage, onClose, onEdit, onDelete }) {
           <ArticleSection title="Resolution" text={article.resolution} />
         </div>
 
-        <div className="border-t border-slate-200 bg-white/95 px-7 py-4 backdrop-blur">
+        <div className="shrink-0 border-t border-slate-200 bg-white/95 px-7 py-4 backdrop-blur">
           <div className="flex flex-wrap items-center justify-end gap-3">
             <button
               onClick={onClose}
@@ -512,18 +513,11 @@ function ArticleFormModal({ article, tickets, branches = [], isSuperAdmin, user,
               <label className="mb-2 block text-sm font-bold text-slate-700">
                 Related Ticket
               </label>
-              <select
+              <TicketSelect
                 value={form.related_ticket_id}
-                onChange={(e) => updateForm("related_ticket_id", e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-              >
-                <option value="">None</option>
-                {tickets.map((ticket) => (
-                  <option key={ticket.id} value={ticket.id}>
-                    {ticket.ticket_number} - {ticket.title}
-                  </option>
-                ))}
-              </select>
+                tickets={tickets}
+                onChange={(value) => updateForm("related_ticket_id", value)}
+              />
             </div>
 
             {isSuperAdmin && (
@@ -591,6 +585,90 @@ function ArticleFormModal({ article, tickets, branches = [], isSuperAdmin, user,
       </div>
     </div>
   );
+}
+
+function TicketSelect({ value, tickets, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selectedTicket = tickets.find((ticket) => String(ticket.id) === String(value));
+  const selectedLabel = selectedTicket
+    ? formatTicketLabel(selectedTicket)
+    : "None";
+
+  const selectTicket = (nextValue) => {
+    onChange(nextValue);
+    setOpen(false);
+  };
+
+  return (
+    <div
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <ChevronDown
+          size={18}
+          className={`shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="mt-2 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+        >
+          <button
+            type="button"
+            role="option"
+            aria-selected={!value}
+            onClick={() => selectTicket("")}
+            className={`block w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 ${
+              !value ? "bg-blue-50 font-bold text-blue-700" : "text-slate-700"
+            }`}
+          >
+            None
+          </button>
+          {tickets.map((ticket) => {
+            const optionValue = String(ticket.id);
+            const selected = String(value) === optionValue;
+
+            return (
+              <button
+                key={ticket.id}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => selectTicket(optionValue)}
+                className={`block w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 ${
+                  selected ? "bg-blue-50 font-bold text-blue-700" : "text-slate-700"
+                }`}
+              >
+                {formatTicketLabel(ticket)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatTicketLabel(ticket) {
+  return `${ticket.ticket_number} - ${ticket.title}`;
 }
 
 function ArticleSection({ title, text }) {
