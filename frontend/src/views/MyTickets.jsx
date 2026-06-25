@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle, Paperclip, RotateCcw, Star, Ticket, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import AttachmentPreviewModal from "../components/AttachmentPreviewModal";
-import { buildTicketPayload, buildTicketQuery } from "../utils/ticketAccess";
-import { API_URL } from "../config/api";
 
-const API_BASE = `${API_URL}/api/v1`;
+const API_BASE = "http://localhost:5001/api/v1";
 
 export default function MyTickets() {
   const { user } = useAuth();
@@ -18,7 +15,7 @@ export default function MyTickets() {
   const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/tickets${buildTicketQuery(user)}`);
+      const res = await fetch(`${API_BASE}/tickets`);
       const data = await res.json();
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -26,7 +23,7 @@ export default function MyTickets() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     fetchTickets();
@@ -125,7 +122,6 @@ export default function MyTickets() {
       {selectedTicket && (
         <TicketDetails
           ticket={selectedTicket}
-          user={user}
           onClose={() => setSelectedTicket(null)}
           onUpdated={() => {
             setSelectedTicket(null);
@@ -137,17 +133,16 @@ export default function MyTickets() {
   );
 }
 
-function TicketDetails({ ticket, user, onClose, onUpdated }) {
+function TicketDetails({ ticket, onClose, onUpdated }) {
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [rating, setRating] = useState(ticket.satisfaction_rating || 0);
-  const [previewAttachment, setPreviewAttachment] = useState(null);
 
   const fetchDetails = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/tickets/${ticket.id}${buildTicketQuery(user)}`);
+      const res = await fetch(`${API_BASE}/tickets/${ticket.id}`);
       const data = await res.json();
       setDetails(data);
     } catch (err) {
@@ -155,7 +150,7 @@ function TicketDetails({ ticket, user, onClose, onUpdated }) {
     } finally {
       setLoading(false);
     }
-  }, [ticket.id, user]);
+  }, [ticket.id]);
 
   useEffect(() => {
     fetchDetails();
@@ -173,7 +168,7 @@ function TicketDetails({ ticket, user, onClose, onUpdated }) {
       const res = await fetch(`${API_BASE}/tickets/${ticket.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildTicketPayload(user, { status })),
+        body: JSON.stringify({ status }),
       });
       if (!res.ok) throw new Error("Failed to update ticket.");
       onUpdated();
@@ -190,7 +185,7 @@ function TicketDetails({ ticket, user, onClose, onUpdated }) {
       const res = await fetch(`${API_BASE}/tickets/${ticket.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildTicketPayload(user, { satisfaction_rating: value })),
+        body: JSON.stringify({ satisfaction_rating: value }),
       });
       if (!res.ok) throw new Error("Failed to save rating.");
       fetchDetails();
@@ -199,13 +194,15 @@ function TicketDetails({ ticket, user, onClose, onUpdated }) {
     }
   };
 
-  const openAttachment = (attachment) => {
-    if (attachment.mime_type?.startsWith("image/")) {
-      setPreviewAttachment(attachment);
-      return;
-    }
-    if (attachment.file_path) {
-      window.open(`${API_URL}${attachment.file_path}`, "_blank", "noopener,noreferrer");
+  const openAttachment = async (attachmentId) => {
+    try {
+      const attachment = item.attachments?.find(
+        (entry) => entry.attachment_id === attachmentId
+      );
+      if (!attachment?.file_path) throw new Error("Attachment file path not found");
+      window.open(`http://localhost:5001${attachment.file_path}`, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -242,7 +239,6 @@ function TicketDetails({ ticket, user, onClose, onUpdated }) {
               <InfoTile label="Assigned Technician" value={item.assigned_name || "Unassigned"} />
               <InfoTile label="Priority" value={item.priority || "Not set"} />
               <InfoTile label="Category" value={item.category || "Uncategorized"} />
-              <InfoTile label="Branch" value={item.branch_name || "No branch"} />
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -262,17 +258,10 @@ function TicketDetails({ ticket, user, onClose, onUpdated }) {
                   {item.attachments.map((attachment) => (
                     <button
                       key={attachment.attachment_id}
-                      onClick={() => openAttachment(attachment)}
-                      className="flex w-full items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                      onClick={() => openAttachment(attachment.attachment_id)}
+                      className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700"
                     >
-                      {attachment.mime_type?.startsWith("image/") && (
-                        <img
-                          src={`${API_URL}${attachment.file_path}`}
-                          alt={attachment.file_name}
-                          className="h-12 w-16 rounded-lg object-cover"
-                        />
-                      )}
-                      <span className="flex-1">{attachment.file_name}</span>
+                      <span>{attachment.file_name}</span>
                       <span className="text-xs text-slate-400">
                         {attachment.mime_type}
                       </span>
@@ -374,12 +363,6 @@ function TicketDetails({ ticket, user, onClose, onUpdated }) {
           </div>
         </div>
       </div>
-      {previewAttachment && (
-        <AttachmentPreviewModal
-          attachment={previewAttachment}
-          onClose={() => setPreviewAttachment(null)}
-        />
-      )}
     </div>
   );
 }

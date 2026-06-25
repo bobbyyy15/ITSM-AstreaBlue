@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   BookOpen,
+  ChevronDown,
   Edit3,
   FileText,
   Plus,
@@ -10,13 +11,15 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { API_URL } from "../config/api";
+import { authHeaders } from "../services/authHeaders";
 
-const API_BASE = `${API_URL}/api/v1`;
+const API_BASE = "http://localhost:5001/api/v1";
 
 const emptyArticle = {
   title: "",
   category: "",
+  tags: "",
+  branch_id: "",
   symptoms: "",
   resolution: "",
   related_ticket_id: "",
@@ -28,18 +31,22 @@ export default function KnowledgeBase() {
   const navigate = useNavigate();
   const [articles, setArticles] = useState([]);
   const [tickets, setTickets] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [articleForm, setArticleForm] = useState(null);
 
-  const canManage = ["Admin", "Technician"].includes(role || user?.role_name);
+  const isSuperAdmin = (role || user?.role_name) === "SuperAdmin";
+  const canManage = ["Admin", "Technician"].includes(role || user?.role_name) || isSuperAdmin;
 
   const fetchArticles = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/knowledge-base`);
+      const res = await fetch(`${API_BASE}/knowledge-base`, {
+        headers: authHeaders(),
+      });
       const data = await res.json();
       setArticles(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -53,7 +60,9 @@ export default function KnowledgeBase() {
     if (!canManage) return;
 
     try {
-      const res = await fetch(`${API_BASE}/tickets`);
+      const res = await fetch(`${API_BASE}/tickets`, {
+        headers: authHeaders(),
+      });
       const data = await res.json();
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -61,10 +70,26 @@ export default function KnowledgeBase() {
     }
   }, [canManage]);
 
+  const fetchBranches = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/branches`, {
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      setBranches(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch branches failed:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchArticles();
     fetchTickets();
-  }, [fetchArticles, fetchTickets]);
+
+    if (isSuperAdmin) {
+      fetchBranches();
+    }
+  }, [fetchArticles, fetchTickets, isSuperAdmin]);
 
   useEffect(() => {
     if (!canManage || !location.state?.kbPrefill) return;
@@ -72,6 +97,8 @@ export default function KnowledgeBase() {
     setArticleForm({
       ...emptyArticle,
       ...location.state.kbPrefill,
+      tags: location.state.kbPrefill.tags || "",
+      branch_id: location.state.kbPrefill.branch_id || "",
       related_ticket_id: location.state.kbPrefill.related_ticket_id
         ? String(location.state.kbPrefill.related_ticket_id)
         : "",
@@ -98,6 +125,7 @@ export default function KnowledgeBase() {
         !text ||
         article.title?.toLowerCase().includes(text) ||
         article.category?.toLowerCase().includes(text) ||
+        article.tags?.toLowerCase().includes(text) ||
         article.symptoms?.toLowerCase().includes(text) ||
         article.resolution?.toLowerCase().includes(text) ||
         article.related_ticket_number?.toLowerCase().includes(text);
@@ -112,6 +140,7 @@ export default function KnowledgeBase() {
     try {
       const res = await fetch(`${API_BASE}/knowledge-base/${article.kb_id}`, {
         method: "DELETE",
+        headers: authHeaders(),
       });
 
       if (!res.ok) throw new Error("Failed to delete article");
@@ -207,6 +236,11 @@ export default function KnowledgeBase() {
                 <span className="rounded-full bg-slate-100 px-3 py-1">
                   {article.created_by_name || "Unknown author"}
                 </span>
+                {article.branch_name && (
+                  <span className="rounded-full bg-slate-100 px-3 py-1">
+                    {article.branch_name}
+                  </span>
+                )}
                 {article.related_ticket_number && (
                   <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-700">
                     {article.related_ticket_number}
@@ -227,11 +261,13 @@ export default function KnowledgeBase() {
             setArticleForm({
               title: selectedArticle.title || "",
               category: selectedArticle.category || "",
+              tags: selectedArticle.tags || "",
               symptoms: selectedArticle.symptoms || "",
               resolution: selectedArticle.resolution || "",
               related_ticket_id: selectedArticle.related_ticket_id
                 ? String(selectedArticle.related_ticket_id)
                 : "",
+              branch_id: selectedArticle.branch_id || "",
               kb_id: selectedArticle.kb_id,
             });
             setSelectedArticle(null);
@@ -244,6 +280,8 @@ export default function KnowledgeBase() {
         <ArticleFormModal
           article={articleForm}
           tickets={tickets}
+          branches={branches}
+          isSuperAdmin={isSuperAdmin}
           user={user}
           onClose={() => setArticleForm(null)}
           onSaved={() => {
@@ -258,9 +296,9 @@ export default function KnowledgeBase() {
 
 function ArticleDrawer({ article, canManage, onClose, onEdit, onDelete }) {
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/70 backdrop-blur-sm">
-      <div className="flex h-full w-full max-w-2xl flex-col bg-white shadow-2xl">
-        <div className="border-b border-slate-200 bg-white px-7 py-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="shrink-0 border-b border-slate-200 bg-white px-7 py-5">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-widest text-blue-600">
@@ -295,6 +333,14 @@ function ArticleDrawer({ article, canManage, onClose, onEdit, onDelete }) {
               value={article.related_ticket_number || "None linked"}
             />
             <InfoTile
+              label="Branch"
+              value={article.branch_name || "Global"}
+            />
+            <InfoTile
+              label="Tags"
+              value={article.tags || "None"}
+            />
+            <InfoTile
               label="Updated At"
               value={
                 article.updated_at
@@ -308,7 +354,7 @@ function ArticleDrawer({ article, canManage, onClose, onEdit, onDelete }) {
           <ArticleSection title="Resolution" text={article.resolution} />
         </div>
 
-        <div className="border-t border-slate-200 bg-white/95 px-7 py-4 backdrop-blur">
+        <div className="shrink-0 border-t border-slate-200 bg-white/95 px-7 py-4 backdrop-blur">
           <div className="flex flex-wrap items-center justify-end gap-3">
             <button
               onClick={onClose}
@@ -341,7 +387,7 @@ function ArticleDrawer({ article, canManage, onClose, onEdit, onDelete }) {
   );
 }
 
-function ArticleFormModal({ article, tickets, user, onClose, onSaved }) {
+function ArticleFormModal({ article, tickets, branches = [], isSuperAdmin, user, onClose, onSaved }) {
   const [form, setForm] = useState(article);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -366,11 +412,13 @@ function ArticleFormModal({ article, tickets, user, onClose, onSaved }) {
       const payload = {
         title: form.title.trim(),
         category: form.category.trim() || null,
+        tags: form.tags?.trim() || null,
         symptoms: form.symptoms.trim() || null,
         resolution: form.resolution.trim() || null,
         related_ticket_id: form.related_ticket_id
           ? Number(form.related_ticket_id)
           : null,
+        branch_id: isSuperAdmin ? Number(form.branch_id) : undefined,
         created_by: user?.user_id || null,
       };
 
@@ -380,7 +428,7 @@ function ArticleFormModal({ article, tickets, user, onClose, onSaved }) {
           : `${API_BASE}/knowledge-base`,
         {
           method: isEditing ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify(payload),
         }
       );
@@ -449,21 +497,48 @@ function ArticleFormModal({ article, tickets, user, onClose, onSaved }) {
 
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-700">
+                Tags
+              </label>
+              <input
+                value={form.tags || ""}
+                onChange={(e) => updateForm("tags", e.target.value)}
+                placeholder="hardware, vpn, windows"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-700">
                 Related Ticket
               </label>
-              <select
+              <TicketSelect
                 value={form.related_ticket_id}
-                onChange={(e) => updateForm("related_ticket_id", e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-              >
-                <option value="">None</option>
-                {tickets.map((ticket) => (
-                  <option key={ticket.id} value={ticket.id}>
-                    {ticket.ticket_number} - {ticket.title}
-                  </option>
-                ))}
-              </select>
+                tickets={tickets}
+                onChange={(value) => updateForm("related_ticket_id", value)}
+              />
             </div>
+
+            {isSuperAdmin && (
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Branch
+                </label>
+                <select
+                  value={form.branch_id || ""}
+                  onChange={(e) => updateForm("branch_id", e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
+                >
+                  <option value="">Select branch</option>
+                  {branches.map((branch) => (
+                    <option key={branch.branch_id} value={branch.branch_id}>
+                      {branch.branch_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <div>
@@ -510,6 +585,90 @@ function ArticleFormModal({ article, tickets, user, onClose, onSaved }) {
       </div>
     </div>
   );
+}
+
+function TicketSelect({ value, tickets, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selectedTicket = tickets.find((ticket) => String(ticket.id) === String(value));
+  const selectedLabel = selectedTicket
+    ? formatTicketLabel(selectedTicket)
+    : "None";
+
+  const selectTicket = (nextValue) => {
+    onChange(nextValue);
+    setOpen(false);
+  };
+
+  return (
+    <div
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <ChevronDown
+          size={18}
+          className={`shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="mt-2 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+        >
+          <button
+            type="button"
+            role="option"
+            aria-selected={!value}
+            onClick={() => selectTicket("")}
+            className={`block w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 ${
+              !value ? "bg-blue-50 font-bold text-blue-700" : "text-slate-700"
+            }`}
+          >
+            None
+          </button>
+          {tickets.map((ticket) => {
+            const optionValue = String(ticket.id);
+            const selected = String(value) === optionValue;
+
+            return (
+              <button
+                key={ticket.id}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => selectTicket(optionValue)}
+                className={`block w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 ${
+                  selected ? "bg-blue-50 font-bold text-blue-700" : "text-slate-700"
+                }`}
+              >
+                {formatTicketLabel(ticket)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatTicketLabel(ticket) {
+  return `${ticket.ticket_number} - ${ticket.title}`;
 }
 
 function ArticleSection({ title, text }) {

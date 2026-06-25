@@ -4,8 +4,6 @@
  * Simulates an HR coordinator logging employee privacy consent options.
  */
 async function runMockOnboardingTest() {
-  const API_URL = process.env.VITE_API_URL || "http://localhost:5000";
-
   console.log("⏳ Initializing mock compliance submission test...");
 
   // We use user_id: 1, which corresponds to the initial records we seeded into the database
@@ -17,7 +15,7 @@ async function runMockOnboardingTest() {
 
   try {
     // Make an asynchronous HTTP POST request to your live local Express server
-    const response = await fetch(`${API_URL}/api/v1/compliance/consent`, {
+    const response = await fetch("http://localhost:5001/api/v1/compliance/consent", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

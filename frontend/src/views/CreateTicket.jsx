@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { FileText, Paperclip } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { buildTicketPayload } from "../utils/ticketAccess";
-import { API_URL } from "../config/api";
 
-const API_BASE = `${API_URL}/api/v1`;
+const API_BASE = "http://localhost:5001/api/v1";
 const priorityOptions = ["P1-Critical", "P2-High", "P3-Medium", "P4-Low"];
 const impactOptions = ["High", "Medium", "Low"];
 const urgencyOptions = ["High", "Medium", "Low"];
@@ -70,16 +68,15 @@ export default function CreateTicket() {
       const res = await fetch(`${API_BASE}/tickets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildTicketPayload(user, {
+        body: JSON.stringify({
           ...form,
           category_id: form.category_id || null,
           requester_id: user?.user_id,
-          branch_id: user?.branch_id || null,
           status: "Open Queue",
           source: "portal",
-        })),
+        }),
       });
-      const data = await readJsonSafely(res);
+      const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create ticket.");
 
       await uploadTicketAttachments(data.id, files, user?.user_id);

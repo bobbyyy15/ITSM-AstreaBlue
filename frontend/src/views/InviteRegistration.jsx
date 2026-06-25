@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { API_URL } from "../config/api";
 
-const API_BASE = `${API_URL}/api/v1`;
+const API_BASE = "http://localhost:5001/api/v1";
 
 export default function InviteRegistration() {
   const { token } = useParams();
   const navigate = useNavigate();
   const [invite, setInvite] = useState(null);
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -41,20 +39,15 @@ export default function InviteRegistration() {
       return;
     }
 
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-
     try {
       setSaving(true);
-      const res = await fetch(`${API_BASE}/invites/${token}/complete`, {
+      const res = await fetch(`${API_BASE}/invites/${token}/accept`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, confirm_password: confirmPassword }),
+        body: JSON.stringify({ password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to complete invite.");
+      if (!res.ok) throw new Error(data.error || "Failed to accept invite.");
       navigate("/login");
     } catch (err) {
       setError(err.message);
@@ -89,14 +82,7 @@ export default function InviteRegistration() {
 
             {invite && (
               <div className="rounded-2xl bg-slate-50 p-5">
-                <p className="text-sm font-bold text-slate-500">
-                  {invite.company_email || invite.email}
-                </p>
-                {invite.personal_email && (
-                  <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-400">
-                    Invite sent to {invite.personal_email}
-                  </p>
-                )}
+                <p className="text-sm font-bold text-slate-500">{invite.email}</p>
                 <p className="mt-1 text-xl font-black text-slate-900">
                   {invite.full_name || "Invited User"}
                 </p>
@@ -117,18 +103,6 @@ export default function InviteRegistration() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
               />
             </div>

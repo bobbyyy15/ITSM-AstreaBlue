@@ -8,10 +8,8 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { buildTicketPayload, buildTicketQuery } from "../utils/ticketAccess";
-import { API_URL } from "../config/api";
 
-const API_BASE = `${API_URL}/api/v1`;
+const API_BASE = "http://localhost:5001/api/v1";
 
 export default function TechnicianDashboard({ view = "dashboard" }) {
   const { user } = useAuth();
@@ -26,7 +24,7 @@ export default function TechnicianDashboard({ view = "dashboard" }) {
   const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/tickets${buildTicketQuery(user)}`);
+      const res = await fetch(`${API_BASE}/tickets`);
       const data = await res.json();
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -34,7 +32,7 @@ export default function TechnicianDashboard({ view = "dashboard" }) {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     fetchTickets();
@@ -87,7 +85,7 @@ export default function TechnicianDashboard({ view = "dashboard" }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(buildTicketPayload(user, { status })),
+        body: JSON.stringify({ status }),
       });
 
       if (!res.ok) throw new Error("Failed to update ticket");
@@ -108,7 +106,7 @@ export default function TechnicianDashboard({ view = "dashboard" }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ...buildTicketPayload(user, { assigned_to: technicianId }),
+          assigned_to: technicianId,
         }),
       });
 
@@ -119,7 +117,7 @@ export default function TechnicianDashboard({ view = "dashboard" }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(buildTicketPayload(user, { status: "In Progress" })),
+        body: JSON.stringify({ status: "In Progress" }),
       });
 
       if (!statusRes.ok) throw new Error("Failed to start ticket");
@@ -419,7 +417,6 @@ export default function TechnicianDashboard({ view = "dashboard" }) {
       {resolutionTicket && (
         <ResolutionModal
           ticket={resolutionTicket}
-          user={user}
           onClose={() => setResolutionTicket(null)}
           onResolved={() => {
             setResolutionTicket(null);
@@ -431,7 +428,7 @@ export default function TechnicianDashboard({ view = "dashboard" }) {
   );
 }
 
-function ResolutionModal({ ticket, user, onClose, onResolved }) {
+function ResolutionModal({ ticket, onClose, onResolved }) {
   const [form, setForm] = useState({
     resolution_notes: "",
     root_cause: "",
@@ -465,7 +462,7 @@ function ResolutionModal({ ticket, user, onClose, onResolved }) {
     try {
       setSaving(true);
 
-      const payload = buildTicketPayload(user, {
+      const payload = {
         status: "Resolved",
         resolution_notes: form.resolution_notes.trim(),
         root_cause: form.root_cause.trim() || null,
@@ -473,7 +470,7 @@ function ResolutionModal({ ticket, user, onClose, onResolved }) {
           ? Number(form.time_spent_minutes)
           : null,
         parts_used: form.parts_used.trim() || null,
-      });
+      };
 
       const res = await fetch(`${API_BASE}/tickets/${ticket.id}`, {
         method: "PUT",

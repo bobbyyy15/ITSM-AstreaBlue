@@ -12,11 +12,8 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import AttachmentPreviewModal from "../components/AttachmentPreviewModal";
-import { buildTicketPayload, buildTicketQuery } from "../utils/ticketAccess";
-import { API_URL } from "../config/api";
 
-const API_BASE = `${API_URL}/api/v1`;
+const API_BASE = "http://localhost:5001/api/v1";
 
 const priorityOptions = ["P1-Critical", "P2-High", "P3-Medium", "P4-Low"];
 const impactOptions = ["High", "Medium", "Low"];
@@ -38,7 +35,7 @@ export default function EmployeeDashboard({ view = "dashboard" }) {
   const fetchTickets = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/tickets${buildTicketQuery(user)}`);
+      const res = await fetch(`${API_BASE}/tickets`);
       const data = await res.json();
       setTickets(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -46,7 +43,7 @@ export default function EmployeeDashboard({ view = "dashboard" }) {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, []);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -270,16 +267,13 @@ function CreateTicketModal({ categories, user, onClose, onCreated }) {
       const res = await fetch(`${API_BASE}/tickets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          buildTicketPayload(user, {
-            ...form,
-            category_id: form.category_id || null,
-            requester_id: user?.user_id,
-            branch_id: user?.branch_id || null,
-            status: "Open Queue",
-            source: "portal",
-          })
-        ),
+        body: JSON.stringify({
+          ...form,
+          category_id: form.category_id || null,
+          requester_id: user?.user_id,
+          status: "Open Queue",
+          source: "portal",
+        }),
       });
 
       const data = await res.json();
@@ -450,13 +444,11 @@ function EmployeeTicketDetails({ ticket, onClose, onUpdated }) {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [rating, setRating] = useState(ticket.satisfaction_rating || 0);
-  const [previewAttachment, setPreviewAttachment] = useState(null);
-  const { user } = useAuth();
 
   const fetchDetails = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/tickets/${ticket.id}${buildTicketQuery(user)}`);
+      const res = await fetch(`${API_BASE}/tickets/${ticket.id}`);
       const data = await res.json();
       setDetails(data);
     } catch (err) {
@@ -464,7 +456,7 @@ function EmployeeTicketDetails({ ticket, onClose, onUpdated }) {
     } finally {
       setLoading(false);
     }
-  }, [ticket.id, user]);
+  }, [ticket.id]);
 
   useEffect(() => {
     fetchDetails();
@@ -483,7 +475,7 @@ function EmployeeTicketDetails({ ticket, onClose, onUpdated }) {
       const res = await fetch(`${API_BASE}/tickets/${ticket.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildTicketPayload(user, { status })),
+        body: JSON.stringify({ status }),
       });
 
       if (!res.ok) throw new Error("Failed to update ticket.");
@@ -502,7 +494,7 @@ function EmployeeTicketDetails({ ticket, onClose, onUpdated }) {
       const res = await fetch(`${API_BASE}/tickets/${ticket.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildTicketPayload(user, { satisfaction_rating: value })),
+        body: JSON.stringify({ satisfaction_rating: value }),
       });
 
       if (!res.ok) throw new Error("Failed to save rating.");
@@ -512,13 +504,15 @@ function EmployeeTicketDetails({ ticket, onClose, onUpdated }) {
     }
   };
 
-  const openAttachment = (attachment) => {
-    if (attachment.mime_type?.startsWith("image/")) {
-      setPreviewAttachment(attachment);
-      return;
-    }
-    if (attachment.file_path) {
-      window.open(`${API_URL}${attachment.file_path}`, "_blank", "noopener,noreferrer");
+  const openAttachment = async (attachmentId) => {
+    try {
+      const attachment = item.attachments?.find(
+        (entry) => entry.attachment_id === attachmentId
+      );
+      if (!attachment?.file_path) throw new Error("Attachment file path not found");
+      window.open(`http://localhost:5001${attachment.file_path}`, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -556,7 +550,6 @@ function EmployeeTicketDetails({ ticket, onClose, onUpdated }) {
               <InfoTile label="Assigned Technician" value={item.assigned_name || "Unassigned"} />
               <InfoTile label="Priority" value={item.priority || "Not set"} />
               <InfoTile label="Category" value={item.category || "Uncategorized"} />
-              <InfoTile label="Branch" value={item.branch_name || "No branch"} />
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -576,17 +569,10 @@ function EmployeeTicketDetails({ ticket, onClose, onUpdated }) {
                   {item.attachments.map((attachment) => (
                     <button
                       key={attachment.attachment_id}
-                      onClick={() => openAttachment(attachment)}
-                      className="flex w-full items-center gap-3 rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                      onClick={() => openAttachment(attachment.attachment_id)}
+                      className="flex w-full items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-left text-sm font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700"
                     >
-                      {attachment.mime_type?.startsWith("image/") && (
-                        <img
-                          src={`${API_URL}${attachment.file_path}`}
-                          alt={attachment.file_name}
-                          className="h-12 w-16 rounded-lg object-cover"
-                        />
-                      )}
-                      <span className="flex-1">{attachment.file_name}</span>
+                      <span>{attachment.file_name}</span>
                       <span className="text-xs text-slate-400">
                         {attachment.mime_type}
                       </span>
@@ -698,12 +684,6 @@ function EmployeeTicketDetails({ ticket, onClose, onUpdated }) {
           </div>
         </div>
       </div>
-      {previewAttachment && (
-        <AttachmentPreviewModal
-          attachment={previewAttachment}
-          onClose={() => setPreviewAttachment(null)}
-        />
-      )}
     </div>
   );
 }

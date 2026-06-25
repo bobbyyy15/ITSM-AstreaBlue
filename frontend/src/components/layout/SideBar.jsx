@@ -21,6 +21,7 @@ import {
   Shield,
   Ticket,
   UserCog,
+  Box,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
@@ -30,7 +31,7 @@ const coreModuleItems = [
     label: "Service Desk & Ticketing",
     icon: Ticket,
     children: [
-      { label: "Incident Management", icon: AlertTriangle, path: "/tickets" },
+      { label: "All Tickets", icon: AlertTriangle, path: "/tickets" },
       { label: "Service Request Management", icon: ClipboardList, path: "/service-requests" },
       { label: "Knowledge Base", icon: BookOpen, path: "/knowledge-base" },
       { label: "SLA Management", icon: Activity, path: "/sla-monitor" },
@@ -127,6 +128,7 @@ const technicianNavItems = [
     label: "Service Desk & Ticketing",
     icon: Ticket,
     children: [
+      { label: "Service Request Management", icon: ClipboardList, path: "/service-requests" },
       { label: "Available Tickets", icon: FileText, path: "/technician/available-tickets" },
       { label: "My Assigned Tickets", icon: Ticket, path: "/technician/my-assigned-tickets" },
       { label: "Resolved Tickets", icon: Activity, path: "/technician/resolved-tickets" },
@@ -142,8 +144,8 @@ const employeeNavItems = [
     label: "Service Desk & Ticketing",
     icon: Ticket,
     children: [
-      { label: "Incident Management", icon: Ticket, path: "/employee/my-tickets" },
-      { label: "Service Request Management", icon: FileText, path: "/employee/create-ticket" },
+      { label: "Create Ticket", icon: FileText, path: "/employee/create-ticket" },
+      { label: "My Requests", icon: Ticket, path: "/employee/my-tickets" },
       { label: "Knowledge Base", icon: BookOpen, path: "/knowledge-base" },
     ],
   },

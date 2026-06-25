@@ -1,21 +1,10 @@
 const express = require("express");
-const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 const router = express.Router();
 const db = require("../../config/db");
 
-function passwordMatches(inputPassword, storedPassword) {
-  if (!storedPassword) return false;
-
-  if (storedPassword.startsWith("sha256$")) {
-    const hash = crypto
-      .createHash("sha256")
-      .update(inputPassword || "")
-      .digest("hex");
-    return storedPassword === `sha256$${hash}`;
-  }
-
-  return inputPassword === storedPassword;
-}
+const JWT_SECRET = process.env.JWT_SECRET || "astreablue_dev_secret_change_in_prod";
+const JWT_EXPIRES = "8h";
 
 router.post("/login", async (req, res) => {
   try {
@@ -59,15 +48,27 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    if (!passwordMatches(password, user.password_hash)) {
+    if (password !== user.password_hash) {
       return res.status(401).json({
         success: false,
         message: "Invalid email or password",
       });
     }
 
+    // Issue JWT so backend can enforce RBAC on service request endpoints
+    const tokenPayload = {
+      userId: user.user_id,
+      role: user.role_name,
+      branchId: user.branch_id || null,
+      email: user.email,
+      name: user.full_name,
+    };
+
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+
     return res.json({
       success: true,
+      token,
       user: {
         user_id: user.user_id,
         full_name: user.full_name,

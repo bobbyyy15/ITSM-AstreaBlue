@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Plus } from "lucide-react";
-import { API_URL } from "../config/api";
 
 export function TicketingBoard() {
   const [tickets, setTickets] = useState([]);
@@ -10,7 +9,7 @@ export function TicketingBoard() {
   useEffect(() => {
     async function fetchTickets() {
       try {
-        const response = await fetch(`${API_URL}/api/v1/tickets`);
+        const response = await fetch('http://localhost:5001/api/v1/tickets');
         if (!response.ok) throw new Error("Failed to fetch");
         const data = await response.json();
         setTickets(data);
