@@ -1,26 +1,6 @@
+import { getAuthToken } from "./authHeaders";
+
 const API_BASE = "http://localhost:5001/api/v1";
-
-function getAuthToken() {
-  try {
-    // Login response now includes a `token` field stored alongside the user object
-    const stored =
-      localStorage.getItem("token") ||
-      sessionStorage.getItem("token");
-    if (stored) return stored;
-
-    // Fallback: token may be embedded in the saved user object
-    const localUser = localStorage.getItem("user");
-    const sessionUser = sessionStorage.getItem("user");
-    const raw = localUser || sessionUser;
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return parsed?.token || parsed?.accessToken || "";
-    }
-  } catch {
-    // ignore parse errors
-  }
-  return "";
-}
 
 function authHeaders(extra = {}) {
   const token = getAuthToken();

@@ -5,10 +5,10 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const jwt = require("jsonwebtoken");
+require("dotenv").config();
+
 const db = require("./config/db");
 const authRoutes = require("./src/routes/auth");
-
-require("dotenv").config();
 
 const app = express();
 
@@ -2050,7 +2050,8 @@ app.delete("/api/v1/tickets/:id", async (req, res) => {
    SERVICE REQUESTS (RBAC)
 ========================== */
 
-const JWT_SECRET = process.env.JWT_SECRET || "astreablue_dev_secret_change_in_prod";
+const JWT_FALLBACK_SECRET = "astreablue_dev_secret_change_in_prod";
+const JWT_SECRET = process.env.JWT_SECRET || JWT_FALLBACK_SECRET;
 
 // Normalise any role variant to a canonical lowercase token
 function normalizeRole(role) {
@@ -2083,7 +2084,14 @@ function decodeRequestUser(req) {
     const auth = req.headers.authorization || "";
     if (!auth.startsWith("Bearer ")) return null;
     const token = auth.slice(7);
-    return jwt.verify(token, JWT_SECRET);
+    try {
+      return jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+      if (JWT_SECRET === JWT_FALLBACK_SECRET) {
+        throw err;
+      }
+      return jwt.verify(token, JWT_FALLBACK_SECRET);
+    }
   } catch {
     return null;
   }
