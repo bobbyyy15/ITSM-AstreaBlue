@@ -33,6 +33,8 @@ export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [rolesError, setRolesError] = useState("");
+  const [branchesError, setBranchesError] = useState("");
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [branchFilter, setBranchFilter] = useState("All");
@@ -55,21 +57,31 @@ export default function UserManagement() {
 
   const fetchRoles = useCallback(async () => {
     try {
+      setRolesError("");
       const res = await fetch(`${API_BASE}/roles`);
       const data = await res.json();
-      setRoles(Array.isArray(data) ? data : []);
+      if (!res.ok) throw new Error(data.error || "Failed to load roles.");
+      if (!Array.isArray(data)) throw new Error("Roles response was invalid.");
+      setRoles(data);
     } catch (err) {
       console.error("Fetch roles failed:", err);
+      setRolesError(err.message || "Failed to load roles.");
+      setRoles([]);
     }
   }, []);
 
   const fetchBranches = useCallback(async () => {
     try {
+      setBranchesError("");
       const res = await fetch(`${API_BASE}/branches`);
       const data = await res.json();
-      setBranches(Array.isArray(data) ? data : []);
+      if (!res.ok) throw new Error(data.error || "Failed to load branches.");
+      if (!Array.isArray(data)) throw new Error("Branches response was invalid.");
+      setBranches(data);
     } catch (err) {
       console.error("Fetch branches failed:", err);
+      setBranchesError(err.message || "Failed to load branches.");
+      setBranches([]);
     }
   }, []);
 
@@ -82,6 +94,14 @@ export default function UserManagement() {
   const allowedRoles = useMemo(() => {
     const allowedNames = isSuperAdmin
       ? ["SuperAdmin", "Admin", "Technician", "Employee"]
+      : ["Technician", "Employee"];
+
+    return roles.filter((item) => allowedNames.includes(item.role_name));
+  }, [isSuperAdmin, roles]);
+
+  const inviteRoles = useMemo(() => {
+    const allowedNames = isSuperAdmin
+      ? ["Admin", "Technician", "Employee"]
       : ["Technician", "Employee"];
 
     return roles.filter((item) => allowedNames.includes(item.role_name));
@@ -324,10 +344,14 @@ export default function UserManagement() {
         <UserFormModal
           user={formUser}
           roles={allowedRoles}
+          inviteRoles={inviteRoles}
           branches={branches}
+          rolesError={rolesError}
+          branchesError={branchesError}
           isSuperAdmin={isSuperAdmin}
           activeRole={activeRole}
           currentBranchId={user?.branch_id}
+          currentBranchName={user?.branch_name}
           currentUserId={user?.user_id}
           onClose={() => setFormUser(null)}
           onSaved={() => {
@@ -375,10 +399,14 @@ function FilterSelect({ value, onChange, options, label }) {
 function UserFormModal({
   user,
   roles,
+  inviteRoles,
   branches,
+  rolesError,
+  branchesError,
   isSuperAdmin,
   activeRole,
   currentBranchId,
+  currentBranchName,
   currentUserId,
   onClose,
   onSaved,
@@ -391,6 +419,39 @@ function UserFormModal({
   const [inviteMessageType, setInviteMessageType] = useState("success");
   const isEditing = Boolean(user.user_id);
   const isInvite = Boolean(user.inviteMode);
+  const roleOptions = isInvite ? inviteRoles : roles;
+  const activeBranches = isInvite
+    ? branches.filter((branch) => {
+        const status = String(branch.status || "").toLowerCase();
+        return branch.is_active !== false && status !== "inactive";
+      })
+    : branches;
+  const assignedBranchName =
+    currentBranchName ||
+    branches.find((branch) => Number(branch.branch_id) === Number(currentBranchId))
+      ?.branch_name ||
+    (currentBranchId ? `Branch #${currentBranchId}` : "");
+
+  useEffect(() => {
+    if (!isInvite) return;
+
+    setForm((prev) => {
+      const next = { ...prev };
+
+      if (!next.role_id && roleOptions.length) {
+        const employeeRole =
+          roleOptions.find((item) => item.role_name === "Employee") ||
+          roleOptions[0];
+        next.role_id = employeeRole?.role_id ? String(employeeRole.role_id) : "";
+      }
+
+      if (!isSuperAdmin && currentBranchId) {
+        next.branch_id = String(currentBranchId);
+      }
+
+      return next;
+    });
+  }, [currentBranchId, isInvite, isSuperAdmin, roleOptions]);
 
   const updateForm = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -403,8 +464,16 @@ function UserFormModal({
 
     if (isInvite) {
       const finalBranchId = isSuperAdmin ? form.branch_id : currentBranchId;
+      if (roleOptions.length === 0) {
+        setError(rolesError || "No invite roles are available. Please try again.");
+        return;
+      }
+      if (isSuperAdmin && activeBranches.length === 0) {
+        setError(branchesError || "No active branches are available for invites.");
+        return;
+      }
       if (!form.full_name || !form.personal_email || !form.role_id || !finalBranchId) {
-        setError("Full name, personal email, role, and branch are required.");
+        setError("Please complete full name, personal email, role, and branch.");
         return;
       }
     } else if (!form.full_name || !form.email || !form.role_id || (!isEditing && !form.password)) {
@@ -433,7 +502,7 @@ function UserFormModal({
             password: form.password,
             role_id: Number(form.role_id),
             role_name:
-              roles.find((item) => String(item.role_id) === String(form.role_id))
+              roleOptions.find((item) => String(item.role_id) === String(form.role_id))
                 ?.role_name || null,
             company_name: form.company_name || null,
             branch_id: finalBranchId ? Number(finalBranchId) : null,
@@ -557,23 +626,31 @@ function UserFormModal({
               label="Role"
               value={form.role_id}
               onChange={(value) => updateForm("role_id", value)}
-              options={roles.map((item) => ({
+              options={roleOptions.map((item) => ({
                 value: String(item.role_id),
                 label: item.role_name,
               }))}
-              placeholder="Select role"
+              placeholder={roleOptions.length ? "Select role" : "No roles loaded"}
+              disabled={isInvite && roleOptions.length === 0}
             />
-            <SelectField
-              label="Branch"
-              value={isSuperAdmin ? form.branch_id || "" : currentBranchId || ""}
-              onChange={(value) => updateForm("branch_id", value)}
-              disabled={!isSuperAdmin}
-              options={branches.map((branch) => ({
-                value: String(branch.branch_id),
-                label: branch.branch_name,
-              }))}
-              placeholder="Global or select branch"
-            />
+            {isInvite && !isSuperAdmin ? (
+              <ReadOnlyField
+                label="Branch"
+                value={assignedBranchName || "No branch assigned"}
+              />
+            ) : (
+              <SelectField
+                label="Branch"
+                value={isSuperAdmin ? form.branch_id || "" : currentBranchId || ""}
+                onChange={(value) => updateForm("branch_id", value)}
+                disabled={!isSuperAdmin || (isInvite && activeBranches.length === 0)}
+                options={activeBranches.map((branch) => ({
+                  value: String(branch.branch_id),
+                  label: branch.branch_name,
+                }))}
+                placeholder={activeBranches.length ? "Select branch" : "No branches loaded"}
+              />
+            )}
             <Field
               label="Company Name"
               value={form.company_name || ""}
@@ -701,6 +778,17 @@ function Field({ label, value, onChange }) {
         onChange={(e) => onChange(e.target.value)}
         className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
       />
+    </div>
+  );
+}
+
+function ReadOnlyField({ label, value }) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-bold text-slate-700">{label}</label>
+      <div className="w-full rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 font-semibold text-slate-700">
+        {value}
+      </div>
     </div>
   );
 }

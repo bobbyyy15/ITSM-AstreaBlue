@@ -2308,8 +2308,14 @@ app.use((err, req, res, next) => {
    START SERVER
 ========================== */
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🪐 AstreaBlue Secure Server active on port ${PORT}`);
+  console.log(`AstreaBlue API active on port ${PORT}`);
+  console.log(
+    `[AstreaBlue API] health=http://localhost:${PORT}/api/health dashboard=http://localhost:${PORT}/api/v1/dashboard/summary`
+  );
+  console.log(
+    "[AstreaBlue API] mounted routes: /api/auth, /api/v1/dashboard, /api/v1/tickets, /api/v1/branches, /api/v1/users, /api/v1/roles, /api/v1/technicians, /api/v1/ticket-categories, /api/v1/invites, /api/v1/knowledge-base, /api/v1/requests"
+  );
 });
