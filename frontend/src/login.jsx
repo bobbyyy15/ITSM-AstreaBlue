@@ -46,35 +46,37 @@ export default function Login() {
     <div className="astrea-login relative flex min-h-screen items-center justify-center overflow-hidden p-6">
 
       <div className="astrea-login-card relative flex min-h-[560px] w-full max-w-5xl overflow-hidden rounded-3xl bg-white">
-        <div className="astrea-login-panel hidden w-1/2 flex-col justify-center bg-[linear-gradient(160deg,#071A3A_0%,#123B8A_45%,#2F6DFF_100%)] p-14 text-white md:flex">
+        <div className="astrea-login-panel hidden w-1/2 flex-col justify-center bg-[linear-gradient(135deg,#FFFFFF_0%,#EAF4FF_54%,#CFE3FF_100%)] p-14 text-[#07172A] md:flex">
           <img
             src="/astrea-blue-logo.png"
             alt="AstreaBlue Logo"
-            className="mb-10 w-72 max-w-full rounded-[22px] border border-white/25 bg-white/95 p-4 object-contain shadow-xl shadow-black/20 backdrop-blur-sm"
+            className="mb-10 w-72 max-w-full rounded-2xl bg-white/95 p-3 object-contain"
           />
 
           <h1 className="mb-4 text-5xl font-extrabold tracking-tight">
             Hey, Hello!
           </h1>
 
-          <p className="mb-4 text-lg font-semibold text-white/90">
+          <p className="mb-4 text-lg font-semibold text-[#1E2A44]">
             Welcome to AstreaBlue ITSM.
           </p>
 
-          <p className="max-w-sm text-sm leading-7 text-white/80">
+          <p className="max-w-sm text-sm leading-7 text-[#50627A]">
             Manage incidents, service requests, assets, SLA monitoring, and IT
             operations through a centralized platform.
           </p>
 
-          <div className="mt-10 grid gap-3 text-sm text-white/90">
+          <div className="mt-10 grid gap-3 text-sm font-semibold text-[#1E2A44]">
             {[
               "Incident & Service Request Management",
               "Asset Lifecycle Monitoring",
               "SLA Tracking & Escalation",
               "Secure Role-Based Access",
             ].map((item) => (
-              <div key={item} className="flex items-center gap-2.5">
-                <CheckCircle size={17} className="shrink-0 text-[#55BFFF]" />
+              <div key={item} className="flex items-center gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[#2563EB] shadow-sm">
+                  <CheckCircle size={17} />
+                </span>
                 <span>{item}</span>
               </div>
             ))}
@@ -168,7 +170,7 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-[linear-gradient(135deg,#2F6DFF_0%,#174FD6_100%)] py-3.5 font-bold text-white shadow-[0_12px_24px_rgba(47,109,255,0.28)] transition hover:-translate-y-0.5 hover:shadow-[0_16px_32px_rgba(47,109,255,0.34)] active:translate-y-0 disabled:cursor-not-allowed disabled:bg-blue-400"
+              className="w-full rounded-xl bg-[linear-gradient(135deg,#155DFB_0%,#2563EB_70%,#38BDF8_100%)] py-3.5 font-bold text-white shadow-[0_14px_28px_rgba(37,99,235,0.28)] transition hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(37,99,235,0.34)] active:translate-y-0 disabled:cursor-not-allowed disabled:bg-blue-400"
             >
               {loading ? "Signing in..." : "Login"}
             </button>

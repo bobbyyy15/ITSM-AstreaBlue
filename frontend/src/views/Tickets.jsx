@@ -39,6 +39,13 @@ const priorityStyle = {
   "P4-Low": "bg-blue-50 text-blue-700 border-blue-200",
 };
 
+const priorityDotStyle = {
+  "P1-Critical": "bg-red-500",
+  "P2-High": "bg-orange-500",
+  "P3-Medium": "bg-amber-500",
+  "P4-Low": "bg-green-500",
+};
+
 function NewTicketModal({ categories, branches, user, onClose, onCreated }) {
   const isSuperAdmin = (user?.role_name || user?.role) === "SuperAdmin";
   const [form, setForm] = useState({
@@ -179,16 +186,19 @@ function NewTicketModal({ categories, branches, user, onClose, onCreated }) {
               ))}
             </select>
 
-            <select
-              value={form.priority}
-              onChange={(e) => updateForm("priority", e.target.value)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none"
-            >
-              <option value="P1-Critical">P1 - Critical</option>
-              <option value="P2-High">P2 - High</option>
-              <option value="P3-Medium">P3 - Medium</option>
-              <option value="P4-Low">P4 - Low</option>
-            </select>
+            <div>
+              <select
+                value={form.priority}
+                onChange={(e) => updateForm("priority", e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none"
+              >
+                <option value="P1-Critical">P1 - Critical</option>
+                <option value="P2-High">P2 - High</option>
+                <option value="P3-Medium">P3 - Medium</option>
+                <option value="P4-Low">P4 - Low</option>
+              </select>
+              <PriorityIndicator value={form.priority} />
+            </div>
 
             <select
               value={form.impact}
@@ -255,6 +265,15 @@ function NewTicketModal({ categories, branches, user, onClose, onCreated }) {
   );
 }
 
+function PriorityIndicator({ value }) {
+  return (
+    <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-black text-slate-700">
+      <span className={`h-2.5 w-2.5 rounded-full ${priorityDotStyle[value] || "bg-slate-400"}`} />
+      {value || "Priority"}
+    </div>
+  );
+}
+
 async function uploadTicketAttachments(ticketId, files, uploadedBy) {
   if (!ticketId || !files.length) return;
 
@@ -301,6 +320,7 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
   const [cancellationReason, setCancellationReason] = useState("");
   const [cancelError, setCancelError] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const activeRole = role || user?.role_name || user?.role;
 
   const fetchDetails = useCallback(async () => {
     try {
@@ -315,24 +335,50 @@ function TicketDetailsDrawer({ ticket, onClose, onRefresh }) {
     }
   }, [ticket.id]);
 
-const fetchTechnicians = useCallback(async () => {
-  try {
-    const branchId = details?.branch_id || ticket.branch_id;
+  const fetchTechnicians = useCallback(async () => {
+    try {
+      const branchId = details?.branch_id || ticket.branch_id;
 
-    if (!branchId) {
+      if (!["SuperAdmin", "Admin"].includes(activeRole) || !branchId) {
+        setTechnicians([]);
+        return;
+      }
+
+      if (
+        activeRole === "Admin" &&
+        (!user?.branch_id || Number(user.branch_id) !== Number(branchId))
+      ) {
+        setTechnicians([]);
+        return;
+      }
+
+      const params = new URLSearchParams({
+        ticket_id: String(ticket.id),
+        branch_id: String(branchId),
+        role_name: activeRole,
+      });
+
+      if (user?.branch_id) {
+        params.set("current_branch_id", String(user.branch_id));
+      }
+
+      if (user?.user_id) {
+        params.set("current_user_id", String(user.user_id));
+      }
+
+      const res = await fetch(`${API_BASE}/technicians?${params.toString()}`);
+      const data = await res.json();
+
+      const sameBranchTechnicians = Array.isArray(data)
+        ? data.filter((technician) => Number(technician.branch_id) === Number(branchId))
+        : [];
+
+      setTechnicians(sameBranchTechnicians);
+    } catch (err) {
+      console.error("Fetch technicians failed:", err);
       setTechnicians([]);
-      return;
     }
-
-    const res = await fetch(`${API_BASE}/technicians?branch_id=${branchId}`);
-    const data = await res.json();
-
-    setTechnicians(Array.isArray(data) ? data : []);
-  } catch (err) {
-    console.error("Fetch technicians failed:", err);
-    setTechnicians([]);
-  }
-}, [details?.branch_id, ticket.branch_id]);
+  }, [activeRole, details?.branch_id, ticket.branch_id, ticket.id, user?.branch_id, user?.user_id]);
 
   useEffect(() => {
     fetchDetails();
@@ -372,7 +418,6 @@ const fetchTechnicians = useCallback(async () => {
   };
 
   const item = details || ticket;
-  const activeRole = role || user?.role_name || user?.role;
   const hasResolution =
     item.status === "Resolved" || Boolean(item.resolution_notes);
   const canCreateKbArticle = ["SuperAdmin", "Admin", "Technician"].includes(
@@ -389,6 +434,9 @@ const fetchTechnicians = useCallback(async () => {
     user?.branch_id &&
     item.branch_id &&
     Number(user.branch_id) === Number(item.branch_id);
+  const canAssignTicket =
+    activeRole === "SuperAdmin" ||
+    (activeRole === "Admin" && isOwnBranchTicket);
   const canCancelTicket =
     (activeRole === "SuperAdmin" ||
       (activeRole === "Admin" && isOwnBranchTicket)) &&
@@ -416,6 +464,10 @@ const fetchTechnicians = useCallback(async () => {
       }
 
       if (hasAssignmentChange) {
+        if (!canAssignTicket) {
+          throw new Error("You are not allowed to assign technicians for this ticket.");
+        }
+
         const assignRes = await fetch(`${API_BASE}/tickets/${ticket.id}/assign`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -425,7 +477,11 @@ const fetchTechnicians = useCallback(async () => {
           }),
         });
 
-        if (!assignRes.ok) throw new Error("Failed to assign technician");
+        const assignData = await readJsonSafely(assignRes);
+
+        if (!assignRes.ok) {
+          throw new Error(assignData.error || "Failed to assign technician");
+        }
       }
 
       await fetchDetails();
@@ -604,6 +660,10 @@ const fetchTechnicians = useCallback(async () => {
                 {isCancelled ? (
   <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
     Cancelled tickets cannot be assigned.
+  </div>
+) : !canAssignTicket ? (
+  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600">
+    You can only assign technicians for tickets in your permitted branch.
   </div>
 ) : technicians.length === 0 ? (
   <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">

@@ -100,16 +100,130 @@ async function sendWelcomeEmail() {
   throw new Error("sendWelcomeEmail is not implemented yet.");
 }
 
-async function sendTicketCreatedEmail() {
-  throw new Error("Ticket email notifications are not implemented yet.");
+function ticketRecipient(ticket) {
+  return (
+    ticket?.requester_company_email ||
+    ticket?.company_email ||
+    ticket?.requester_personal_email ||
+    ticket?.personal_email ||
+    ticket?.requester_email ||
+    ticket?.email ||
+    null
+  );
 }
 
-async function sendTicketAssignedEmail() {
-  throw new Error("Ticket email notifications are not implemented yet.");
+function ticketLink(ticket) {
+  if (!process.env.FRONTEND_URL) return null;
+  const origin = process.env.FRONTEND_URL.replace(/\/$/, "");
+  return `${origin}/tickets`;
 }
 
-async function sendTicketStatusEmail() {
-  throw new Error("Ticket email notifications are not implemented yet.");
+function ticketFields(ticket) {
+  return {
+    number: ticket?.ticket_number || `TKT-${ticket?.id || ""}`,
+    title: ticket?.title || "Untitled ticket",
+    status: ticket?.status || "Open Queue",
+    priority: ticket?.priority || "P3-Medium",
+    branch: ticket?.branch_name || "Unassigned Branch",
+    technician: ticket?.assigned_name || "Not assigned",
+  };
+}
+
+async function sendTicketEmail(ticket, { subject, message }) {
+  const to = ticketRecipient(ticket);
+
+  if (!to) {
+    return {
+      sent: false,
+      warning: "Ticket email skipped because requester has no email address.",
+    };
+  }
+
+  const transporter = getTransporter();
+  const fields = ticketFields(ticket);
+  const link = ticketLink(ticket);
+  const safeMessage = escapeHtml(message);
+  const safeLink = link ? escapeHtml(link) : null;
+
+  await transporter.sendMail({
+    from: fromAddress(),
+    to,
+    subject,
+    text: [
+      message,
+      "",
+      `Ticket Number: ${fields.number}`,
+      `Title: ${fields.title}`,
+      `Status: ${fields.status}`,
+      `Priority: ${fields.priority}`,
+      `Branch: ${fields.branch}`,
+      `Assigned Technician: ${fields.technician}`,
+      ...(link ? ["", `View ticket: ${link}`] : []),
+    ].join("\n"),
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.6;">
+        <h2 style="margin: 0 0 16px;">${escapeHtml(subject)}</h2>
+        <p>${safeMessage}</p>
+        <table style="border-collapse: collapse; margin: 18px 0; width: 100%; max-width: 620px;">
+          <tr><td style="padding: 8px; border: 1px solid #e5e7eb;"><strong>Ticket Number</strong></td><td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(fields.number)}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #e5e7eb;"><strong>Title</strong></td><td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(fields.title)}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #e5e7eb;"><strong>Status</strong></td><td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(fields.status)}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #e5e7eb;"><strong>Priority</strong></td><td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(fields.priority)}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #e5e7eb;"><strong>Branch</strong></td><td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(fields.branch)}</td></tr>
+          <tr><td style="padding: 8px; border: 1px solid #e5e7eb;"><strong>Assigned Technician</strong></td><td style="padding: 8px; border: 1px solid #e5e7eb;">${escapeHtml(fields.technician)}</td></tr>
+        </table>
+        ${
+          safeLink
+            ? `<p><a href="${safeLink}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;">View Ticket</a></p><p style="word-break: break-all;">${safeLink}</p>`
+            : ""
+        }
+      </div>
+    `,
+  });
+
+  return { sent: true };
+}
+
+async function sendTicketCreatedEmail(ticket) {
+  return sendTicketEmail(ticket, {
+    subject: `Ticket Created: ${ticket?.ticket_number || ""}`.trim(),
+    message: "Your ticket has been created and logged in AstreaBlue ITSM.",
+  });
+}
+
+async function sendTicketAssignedEmail(ticket) {
+  return sendTicketEmail(ticket, {
+    subject: `Ticket Assigned: ${ticket?.ticket_number || ""}`.trim(),
+    message: "Your ticket has been assigned to a technician.",
+  });
+}
+
+async function sendTicketStatusEmail(ticket) {
+  return sendTicketEmail(ticket, {
+    subject: `Ticket Status Updated: ${ticket?.ticket_number || ""}`.trim(),
+    message: `Your ticket status has changed to ${ticket?.status || "Updated"}.`,
+  });
+}
+
+async function sendTicketResolvedEmail(ticket) {
+  return sendTicketEmail(ticket, {
+    subject: `Ticket Resolved: ${ticket?.ticket_number || ""}`.trim(),
+    message: "Your ticket has been marked as resolved.",
+  });
+}
+
+async function sendTicketClosedEmail(ticket) {
+  return sendTicketEmail(ticket, {
+    subject: `Ticket Closed: ${ticket?.ticket_number || ""}`.trim(),
+    message: "Your ticket has been closed.",
+  });
+}
+
+async function sendTicketCancelledEmail(ticket) {
+  return sendTicketEmail(ticket, {
+    subject: `Ticket Cancelled: ${ticket?.ticket_number || ""}`.trim(),
+    message: "Your ticket has been cancelled.",
+  });
 }
 
 module.exports = {
@@ -119,4 +233,7 @@ module.exports = {
   sendTicketCreatedEmail,
   sendTicketAssignedEmail,
   sendTicketStatusEmail,
+  sendTicketResolvedEmail,
+  sendTicketClosedEmail,
+  sendTicketCancelledEmail,
 };
