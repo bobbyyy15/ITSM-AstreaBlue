@@ -1,3 +1,4 @@
+import { API_URL } from "../config/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Ticket,
@@ -10,7 +11,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { buildTicketPayload, buildTicketQuery } from "../utils/ticketAccess";
 
-const API_BASE = "http://localhost:5001/api/v1";
+const API_BASE = `${API_URL}/api/v1`;
 
 export default function TechnicianDashboard({ view = "dashboard" }) {
   const { user } = useAuth();
@@ -617,3 +618,4 @@ function Card({ icon: Icon, label, value, color }) {
     </div>
   );
 }
+
