@@ -242,14 +242,33 @@ async function ensureHardwareAssetTables() {
         asset_name VARCHAR(255) NOT NULL,
         asset_type VARCHAR(100) NOT NULL,
         brand VARCHAR(100),
+        manufacturer VARCHAR(100),
         model VARCHAR(150),
         serial_number VARCHAR(150) NOT NULL UNIQUE,
         asset_tag VARCHAR(150) UNIQUE,
+        color VARCHAR(100),
+        purchase_price NUMERIC(12,2),
+        supplier VARCHAR(150),
+        assigned_name VARCHAR(255),
+        returned_name VARCHAR(255),
+        warranty VARCHAR(100),
+        condition_notes TEXT,
+        team_department VARCHAR(100),
+        assigned_date DATE,
+        returned_date DATE,
+        accessories TEXT,
+        processor VARCHAR(150),
+        ram VARCHAR(100),
+        storage VARCHAR(150),
+        signature_link TEXT,
+        returned_name_forms VARCHAR(255),
+        attachments JSONB,
         branch_id INTEGER REFERENCES branches(branch_id),
         status VARCHAR(50) NOT NULL DEFAULT 'Active',
         purchase_date DATE,
         warranty_expiration DATE,
         borrower_name VARCHAR(150),
+        borrower_email VARCHAR(255),
         employee_id VARCHAR(100),
         borrower_department VARCHAR(100),
         borrow_date DATE,
@@ -261,6 +280,77 @@ async function ensureHardwareAssetTables() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    await db.query(`
+      ALTER TABLE hardware_assets
+      ADD COLUMN IF NOT EXISTS asset_name VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS asset_type VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS model_name VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS manufacturer VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS model VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS asset_tag VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS color VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS purchase_price NUMERIC(12,2),
+      ADD COLUMN IF NOT EXISTS supplier VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS assigned_name VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS returned_name VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS warranty VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS condition_notes TEXT,
+      ADD COLUMN IF NOT EXISTS team_department VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS assigned_date DATE,
+      ADD COLUMN IF NOT EXISTS returned_date DATE,
+      ADD COLUMN IF NOT EXISTS accessories TEXT,
+      ADD COLUMN IF NOT EXISTS processor VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS ram VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS storage VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS signature_link TEXT,
+      ADD COLUMN IF NOT EXISTS returned_name_forms VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS attachments JSONB,
+      ADD COLUMN IF NOT EXISTS location VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS department VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS warranty_expiration DATE,
+      ADD COLUMN IF NOT EXISTS borrower_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS borrower_email VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS employee_id VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS borrower_department VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS borrow_date DATE,
+      ADD COLUMN IF NOT EXISTS expected_return_date DATE,
+      ADD COLUMN IF NOT EXISTS actual_return_date DATE,
+      ADD COLUMN IF NOT EXISTS condition_before TEXT,
+      ADD COLUMN IF NOT EXISTS condition_after TEXT,
+      ADD COLUMN IF NOT EXISTS notes TEXT,
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    `);
+
+    await db.query(`
+      UPDATE hardware_assets
+      SET
+        asset_name = COALESCE(asset_name, model, model_name, brand || ' Asset'),
+        asset_type = COALESCE(asset_type, 'Other'),
+        manufacturer = COALESCE(manufacturer, brand),
+        model = COALESCE(model, model_name)
+    `);
+
+    await db.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_name = 'hardware_assets'
+            AND column_name = 'model_name'
+        ) THEN
+          ALTER TABLE hardware_assets ALTER COLUMN model_name DROP NOT NULL;
+        END IF;
+      END $$;
+    `);
+
+    await db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS hardware_assets_asset_tag_unique
+      ON hardware_assets (asset_tag)
+      WHERE asset_tag IS NOT NULL
     `);
 
     await db.query(`
@@ -802,6 +892,19 @@ app.patch("/api/v1/branches/:id/admin", async (req, res) => {
   }
 });
 
+
+function getAuthFromRequest(req) {
+  try {
+    const authHeader = req.headers.authorization || "";
+    if (!authHeader.startsWith("Bearer ")) return null;
+    const token = authHeader.split(" ")[1];
+    if (!token) return null;
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
 function getHardwareAssetAccessFilter(req) {
   const role = String(req.query.role_name || "").toLowerCase();
   const branchId = req.query.current_branch_id || req.query.branch_id;
@@ -892,7 +995,7 @@ app.get("/api/v1/hardware-assets", async (req, res) => {
       params.push(`%${search}%`);
       const idx = params.length;
       filters.push(
-        `(a.asset_name ILIKE $${idx} OR a.asset_tag ILIKE $${idx} OR a.serial_number ILIKE $${idx} OR a.brand ILIKE $${idx} OR a.model ILIKE $${idx})`
+        `(a.asset_name ILIKE $${idx} OR a.asset_tag ILIKE $${idx} OR a.serial_number ILIKE $${idx} OR a.brand ILIKE $${idx} OR a.manufacturer ILIKE $${idx} OR a.model ILIKE $${idx} OR a.supplier ILIKE $${idx} OR a.assigned_name ILIKE $${idx} OR a.team_department ILIKE $${idx} OR a.location ILIKE $${idx} OR a.department ILIKE $${idx} OR a.borrower_email ILIKE $${idx})`
       );
     }
 
@@ -925,13 +1028,34 @@ app.get("/api/v1/hardware-assets", async (req, res) => {
         a.asset_name,
         a.asset_type,
         a.brand,
+        a.manufacturer,
         a.model,
         a.serial_number,
         a.asset_tag,
+        a.color,
+        a.purchase_price,
+        a.supplier,
+        a.assigned_name,
+        a.returned_name,
+        a.warranty,
+        a.condition_notes,
+        a.team_department,
+        a.assigned_date,
+        a.returned_date,
+        a.accessories,
+        a.processor,
+        a.ram,
+        a.storage,
+        a.signature_link,
+        a.returned_name_forms,
+        a.attachments,
+        a.location,
+        a.department,
         a.status,
         a.purchase_date,
         a.warranty_expiration,
         a.borrower_name,
+        a.borrower_email,
         a.employee_id,
         a.borrower_department,
         a.borrow_date,
@@ -965,14 +1089,35 @@ app.post("/api/v1/hardware-assets", async (req, res) => {
       asset_name,
       asset_type,
       brand,
+      manufacturer,
       model,
       serial_number,
       asset_tag,
+      color,
+      purchase_price,
+      supplier,
+      assigned_name,
+      returned_name,
+      warranty,
+      condition_notes,
+      team_department,
+      assigned_date,
+      returned_date,
+      accessories,
+      processor,
+      ram,
+      storage,
+      signature_link,
+      returned_name_forms,
+      attachments,
+      location,
+      department,
       branch_id: requestedBranchId,
       status = "Active",
       purchase_date,
       warranty_expiration,
       borrower_name,
+      borrower_email,
       employee_id,
       borrower_department,
       borrow_date,
@@ -983,19 +1128,39 @@ app.post("/api/v1/hardware-assets", async (req, res) => {
       notes,
     } = req.body;
 
-    if (!asset_name || !asset_type || !serial_number) {
+    const finalManufacturer = manufacturer || brand;
+    const finalBrand = brand || manufacturer;
+    const finalAssetName =
+      asset_name ||
+      [finalManufacturer, model].filter(Boolean).join(" ") ||
+      asset_tag;
+    const attachmentPayload = JSON.stringify(Array.isArray(attachments) ? attachments : []);
+
+    if (!asset_tag || !asset_type || !status || !finalManufacturer || !model || !serial_number) {
       return res.status(400).json({
         success: false,
-        error: "Asset name, type, and serial number are required",
+        error: "Asset tag, status, manufacturer, model, asset type, and serial number are required",
       });
     }
 
-    const role = String(req.query.role_name || req.body.role_name || "").toLowerCase();
-    const currentBranchId = req.query.current_branch_id || req.body.current_branch_id;
-    const branchId =
-      role === "superadmin"
-        ? requestedBranchId || currentBranchId || null
-        : currentBranchId || requestedBranchId || null;
+    const auth = getAuthFromRequest(req);
+    const isAdminFromJwt = auth && String(auth.role || "").toLowerCase() === "admin";
+    const isSuperAdminFromJwt = auth && String(auth.role || "").toLowerCase() === "superadmin";
+
+    let branchId;
+    if (isAdminFromJwt && auth.branchId) {
+      branchId = auth.branchId;
+    } else if (isSuperAdminFromJwt) {
+      branchId = requestedBranchId || currentBranchId || null;
+    } else {
+      const role = String(req.query.role_name || req.body.role_name || "").toLowerCase();
+      const currentBranchId = req.query.current_branch_id || req.body.current_branch_id;
+      branchId =
+        role === "superadmin"
+          ? requestedBranchId || currentBranchId || null
+          : currentBranchId || requestedBranchId || null;
+    }
+
 
     if (!branchId) {
       return res.status(400).json({
@@ -1004,29 +1169,41 @@ app.post("/api/v1/hardware-assets", async (req, res) => {
       });
     }
 
-    if (status === "Borrowed") {
-      if (!borrower_name || !employee_id || !borrower_department || !borrow_date || !expected_return_date) {
-        return res.status(400).json({
-          success: false,
-          error: "Borrower name, employee ID, department, borrow date, and expected return date are required for borrowed assets",
-        });
-      }
-    }
-
     const result = await db.query(
       `
       INSERT INTO hardware_assets (
         asset_name,
         asset_type,
         brand,
+        manufacturer,
         model,
         serial_number,
         asset_tag,
+        color,
+        purchase_price,
+        supplier,
+        assigned_name,
+        returned_name,
+        warranty,
+        condition_notes,
+        team_department,
+        assigned_date,
+        returned_date,
+        accessories,
+        processor,
+        ram,
+        storage,
+        signature_link,
+        returned_name_forms,
+        attachments,
+        location,
+        department,
         branch_id,
         status,
         purchase_date,
         warranty_expiration,
         borrower_name,
+        borrower_email,
         employee_id,
         borrower_department,
         borrow_date,
@@ -1035,21 +1212,42 @@ app.post("/api/v1/hardware-assets", async (req, res) => {
         condition_before,
         condition_after,
         notes
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24::jsonb,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
       RETURNING *
       `,
       [
-        asset_name,
+        finalAssetName,
         asset_type,
-        brand || null,
+        finalBrand,
+        finalManufacturer,
         model || null,
         serial_number,
-        asset_tag || null,
+        asset_tag,
+        color || null,
+        purchase_price || null,
+        supplier || null,
+        assigned_name || null,
+        returned_name || null,
+        warranty || null,
+        condition_notes || null,
+        team_department || null,
+        assigned_date || null,
+        returned_date || null,
+        accessories || null,
+        processor || null,
+        ram || null,
+        storage || null,
+        signature_link || null,
+        returned_name_forms || null,
+        attachmentPayload,
+        location || null,
+        department || team_department || null,
         branchId,
         status,
         purchase_date || null,
-        warranty_expiration || null,
-        borrower_name || null,
+        warranty_expiration || warranty || null,
+        borrower_name || assigned_name || null,
+        borrower_email || null,
         employee_id || null,
         borrower_department || null,
         borrow_date || null,
@@ -1104,14 +1302,35 @@ app.put("/api/v1/hardware-assets/:id", async (req, res) => {
       asset_name,
       asset_type,
       brand,
+      manufacturer,
       model,
       serial_number,
       asset_tag,
+      color,
+      purchase_price,
+      supplier,
+      assigned_name,
+      returned_name,
+      warranty,
+      condition_notes,
+      team_department,
+      assigned_date,
+      returned_date,
+      accessories,
+      processor,
+      ram,
+      storage,
+      signature_link,
+      returned_name_forms,
+      attachments,
+      location,
+      department,
       branch_id: requestedBranchId,
       status,
       purchase_date,
       warranty_expiration,
       borrower_name,
+      borrower_email,
       employee_id,
       borrower_department,
       borrow_date,
@@ -1122,10 +1341,18 @@ app.put("/api/v1/hardware-assets/:id", async (req, res) => {
       notes,
     } = req.body;
 
-    if (!asset_name || !asset_type || !serial_number) {
+    const finalManufacturer = manufacturer || brand;
+    const finalBrand = brand || manufacturer;
+    const finalAssetName =
+      asset_name ||
+      [finalManufacturer, model].filter(Boolean).join(" ") ||
+      asset_tag;
+    const attachmentPayload = JSON.stringify(Array.isArray(attachments) ? attachments : []);
+
+    if (!asset_tag || !asset_type || !status || !finalManufacturer || !model || !serial_number) {
       return res.status(400).json({
         success: false,
-        error: "Asset name, type, and serial number are required",
+        error: "Asset tag, status, manufacturer, model, asset type, and serial number are required",
       });
     }
 
@@ -1134,12 +1361,24 @@ app.put("/api/v1/hardware-assets/:id", async (req, res) => {
       return res.status(404).json({ success: false, error: "Asset not found" });
     }
 
-    const role = String(req.query.role_name || req.body.role_name || "").toLowerCase();
-    const currentBranchId = req.query.current_branch_id || req.body.current_branch_id;
-    const branchId =
-      role === "superadmin"
-        ? requestedBranchId || currentBranchId || existing.rows[0].branch_id
-        : currentBranchId || existing.rows[0].branch_id;
+    const auth = getAuthFromRequest(req);
+    const isAdminFromJwt = auth && String(auth.role || "").toLowerCase() === "admin";
+    const isSuperAdminFromJwt = auth && String(auth.role || "").toLowerCase() === "superadmin";
+
+    let branchId;
+    if (isAdminFromJwt && auth.branchId) {
+      branchId = auth.branchId;
+    } else if (isSuperAdminFromJwt) {
+      branchId = requestedBranchId || currentBranchId || existing.rows[0].branch_id;
+    } else {
+      const role = String(req.query.role_name || req.body.role_name || "").toLowerCase();
+      const currentBranchId = req.query.current_branch_id || req.body.current_branch_id;
+      branchId =
+        role === "superadmin"
+          ? requestedBranchId || currentBranchId || existing.rows[0].branch_id
+          : currentBranchId || existing.rows[0].branch_id;
+    }
+
 
     const result = await db.query(
       `
@@ -1148,38 +1387,80 @@ app.put("/api/v1/hardware-assets/:id", async (req, res) => {
         asset_name = $1,
         asset_type = $2,
         brand = $3,
-        model = $4,
-        serial_number = $5,
-        asset_tag = $6,
-        branch_id = $7,
-        status = $8,
-        purchase_date = $9,
-        warranty_expiration = $10,
-        borrower_name = $11,
-        employee_id = $12,
-        borrower_department = $13,
-        borrow_date = $14,
-        expected_return_date = $15,
-        actual_return_date = $16,
-        condition_before = $17,
-        condition_after = $18,
-        notes = $19,
+        manufacturer = $4,
+        model = $5,
+        serial_number = $6,
+        asset_tag = $7,
+        color = $8,
+        purchase_price = $9,
+        supplier = $10,
+        assigned_name = $11,
+        returned_name = $12,
+        warranty = $13,
+        condition_notes = $14,
+        team_department = $15,
+        assigned_date = $16,
+        returned_date = $17,
+        accessories = $18,
+        processor = $19,
+        ram = $20,
+        storage = $21,
+        signature_link = $22,
+        returned_name_forms = $23,
+        attachments = $24::jsonb,
+        location = $25,
+        department = $26,
+        branch_id = $27,
+        status = $28,
+        purchase_date = $29,
+        warranty_expiration = $30,
+        borrower_name = $31,
+        borrower_email = $32,
+        employee_id = $33,
+        borrower_department = $34,
+        borrow_date = $35,
+        expected_return_date = $36,
+        actual_return_date = $37,
+        condition_before = $38,
+        condition_after = $39,
+        notes = $40,
         updated_at = CURRENT_TIMESTAMP
-      WHERE asset_id = $20
+      WHERE asset_id = $41
       RETURNING *
       `,
       [
-        asset_name,
+        finalAssetName,
         asset_type,
-        brand || null,
+        finalBrand,
+        finalManufacturer,
         model || null,
         serial_number,
-        asset_tag || null,
+        asset_tag,
+        color || null,
+        purchase_price || null,
+        supplier || null,
+        assigned_name || null,
+        returned_name || null,
+        warranty || null,
+        condition_notes || null,
+        team_department || null,
+        assigned_date || null,
+        returned_date || null,
+        accessories || null,
+        processor || null,
+        ram || null,
+        storage || null,
+        signature_link || null,
+        returned_name_forms || null,
+        attachmentPayload,
+        location || null,
+        department || team_department || null,
         branchId,
         status || existing.rows[0].status,
         purchase_date || null,
-        warranty_expiration || null,
-        borrower_name || null,
+        warranty_expiration || warranty || null,
+        borrower_name || assigned_name || null,
+        borrower_email || null,
         employee_id || null,
         borrower_department || null,
         borrow_date || null,
