@@ -98,7 +98,8 @@ function NewTicketModal({ categories, branches, user, onClose, onCreated }) {
 
       if (!res.ok) throw new Error(data.error || "Failed to create ticket.");
 
-      await uploadTicketAttachments(data.id, files, user?.user_id);
+      const createdTicket = data.data || data;
+      await uploadTicketAttachments(createdTicket.id, files, user?.user_id);
       onCreated();
     } catch (err) {
       setError(err.message);

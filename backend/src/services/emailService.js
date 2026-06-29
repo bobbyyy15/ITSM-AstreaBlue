@@ -1,27 +1,57 @@
 const nodemailer = require("nodemailer");
 
-function getTransporter() {
-  const {
-    SMTP_HOST,
-    SMTP_PORT,
-    SMTP_SECURE,
-    SMTP_USER,
-    SMTP_PASS,
-  } = process.env;
+function cleanEnv(value) {
+  return String(value || "").trim();
+}
 
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
+function smtpCredentials() {
+  const user = cleanEnv(process.env.SMTP_USER);
+  const pass = cleanEnv(process.env.SMTP_PASS).replace(/\s+/g, "");
+
+  if (!user || !pass) {
     throw new Error("SMTP configuration is incomplete.");
   }
 
+  return { user, pass };
+}
+
+function getTransporter({ fallback = false } = {}) {
+  const auth = smtpCredentials();
+  const configuredPort = Number.parseInt(cleanEnv(process.env.SMTP_PORT), 10);
+  const configuredSecure = cleanEnv(process.env.SMTP_SECURE).toLowerCase();
+  const port = fallback ? 587 : Number.isInteger(configuredPort) ? configuredPort : 465;
+  const secure = fallback ? false : configuredSecure ? configuredSecure === "true" : port === 465;
+
   return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT),
-    secure: String(SMTP_SECURE).toLowerCase() === "true",
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
+    host: "smtp.gmail.com",
+    port,
+    secure,
+    requireTLS: fallback || port === 587,
+    auth,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
+}
+
+async function sendMail(message) {
+  try {
+    return await getTransporter().sendMail(message);
+  } catch (primaryError) {
+    const connectionErrorCodes = new Set([
+      "ECONNECTION",
+      "ETIMEDOUT",
+      "ECONNREFUSED",
+      "ECONNRESET",
+    ]);
+
+    if (!connectionErrorCodes.has(primaryError.code)) {
+      throw primaryError;
+    }
+
+    console.warn(`Primary SMTP connection failed (${primaryError.code}); retrying with TLS on port 587.`);
+    return getTransporter({ fallback: true }).sendMail(message);
+  }
 }
 
 function getMissingSmtpConfig() {
@@ -56,13 +86,12 @@ async function sendInvitationEmail({
   branchName,
   inviteLink,
 }) {
-  const transporter = getTransporter();
   const safeName = escapeHtml(fullName || "there");
   const safeRole = escapeHtml(roleName || "Employee");
   const safeBranch = escapeHtml(branchName || "Assigned Branch");
   const safeInviteLink = escapeHtml(inviteLink);
 
-  return transporter.sendMail({
+  return sendMail({
     from: fromAddress(),
     to,
     subject: "AstreaBlue ITSM Account Invitation",
@@ -139,13 +168,12 @@ async function sendTicketEmail(ticket, { subject, message }) {
     };
   }
 
-  const transporter = getTransporter();
   const fields = ticketFields(ticket);
   const link = ticketLink(ticket);
   const safeMessage = escapeHtml(message);
   const safeLink = link ? escapeHtml(link) : null;
 
-  await transporter.sendMail({
+  await sendMail({
     from: fromAddress(),
     to,
     subject,

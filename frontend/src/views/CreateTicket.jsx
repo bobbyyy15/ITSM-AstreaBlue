@@ -88,9 +88,10 @@ export default function CreateTicket() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create ticket.");
 
-      await uploadTicketAttachments(data.id, files, user?.user_id);
+      const createdTicket = data.data || data;
+      await uploadTicketAttachments(createdTicket.id, files, user?.user_id);
       resetForm();
-      setSuccess(`Ticket ${data.ticket_number || ""} created successfully.`);
+      setSuccess(`Ticket ${createdTicket.ticket_number || ""} created successfully.`);
     } catch (err) {
       setError(err.message);
     } finally {

@@ -290,7 +290,23 @@ function CreateTicketModal({ categories, user, onClose, onCreated }) {
 
       if (!res.ok) throw new Error(data.error || "Failed to create ticket.");
 
-      await uploadTicketAttachments(data.id, files, user?.user_id);
+      const createdTicket = data.data || data;
+      setForm({
+        title: "",
+        description: "",
+        category_id: "",
+        priority: "P3-Medium",
+        impact: "Medium",
+        urgency: "Medium",
+      });
+      setFiles([]);
+
+      try {
+        await uploadTicketAttachments(createdTicket.id, files, user?.user_id);
+      } catch (attachmentError) {
+        console.warn("Ticket created, but attachment upload failed:", attachmentError.message);
+      }
+
       onCreated();
     } catch (err) {
       setError(err.message);
@@ -363,13 +379,17 @@ function CreateTicketModal({ categories, user, onClose, onCreated }) {
                 })),
               ]}
             />
-            <SelectField
-              label="Priority"
-              value={form.priority}
-              onChange={(value) => updateForm("priority", value)}
-              options={priorityOptions.map((value) => ({ label: value, value }))}
-            />
-            <PriorityIndicator value={form.priority} />
+            <div>
+              <SelectField
+                label="Priority"
+                value={form.priority}
+                onChange={(value) => updateForm("priority", value)}
+                options={priorityOptions.map((value) => ({ label: value, value }))}
+              />
+              <div className="mt-2">
+                <PriorityIndicator value={form.priority} />
+              </div>
+            </div>
             <SelectField
               label="Impact"
               value={form.impact}
