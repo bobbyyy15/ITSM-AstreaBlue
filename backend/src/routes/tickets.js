@@ -680,6 +680,12 @@ router.patch("/:id/assign", async (req, res) => {
   try {
     const { id } = req.params;
     const { assigned_to, changed_by = null } = req.body;
+    const currentUserId =
+      req.body?.current_user_id ||
+      req.query.current_user_id ||
+      req.body?.user_id ||
+      req.query.user_id ||
+      null;
     const currentRole = String(
       req.body?.role_name || req.query.role_name || req.body?.current_role || ""
     ).toLowerCase();
@@ -690,10 +696,20 @@ router.patch("/:id/assign", async (req, res) => {
       req.query.branch_id ||
       null;
 
-    if (!["superadmin", "admin"].includes(currentRole)) {
+    if (!["superadmin", "admin", "technician"].includes(currentRole)) {
       return res.status(403).json({
         success: false,
         error: "You are not allowed to assign tickets.",
+      });
+    }
+
+    if (
+      currentRole === "technician" &&
+      (!currentUserId || !assigned_to || Number(assigned_to) !== Number(currentUserId))
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: "Technicians can only accept tickets for themselves.",
       });
     }
 
@@ -709,6 +725,7 @@ router.patch("/:id/assign", async (req, res) => {
         t.id,
         t.assigned_to,
         t.branch_id,
+        t.status,
         COALESCE(b.branch_name, 'Unassigned Branch') AS branch_name
       FROM tickets t
       LEFT JOIN branches b
@@ -734,6 +751,17 @@ router.patch("/:id/assign", async (req, res) => {
           error: "Admin can only assign technicians from the same branch.",
         });
       }
+    }
+
+    if (
+      currentRole === "technician" &&
+      ticket.assigned_to &&
+      Number(ticket.assigned_to) !== Number(currentUserId)
+    ) {
+      return res.status(403).json({
+        success: false,
+        error: "Technicians can only accept unassigned tickets.",
+      });
     }
 
     if (assigned_to) {
@@ -825,7 +853,7 @@ router.patch("/:id/assign", async (req, res) => {
       `,
       [
         id,
-        changed_by,
+        changed_by || currentUserId,
         "Ticket Assigned",
         ticket.assigned_to,
         assigned_to || null,

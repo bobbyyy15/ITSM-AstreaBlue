@@ -14,12 +14,17 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { buildTicketPayload, buildTicketQuery } from "../utils/ticketAccess";
+import {
+  getPriorityBadgeClass,
+  getSeverityOptionStyle,
+  getSeveritySelectClass,
+  getStatusBadgeClass,
+  priorityOptions,
+  severityOptions,
+} from "../utils/ticketVisuals";
 
 const API_BASE = `${API_URL}/api/v1`;
 
-const priorityOptions = ["P1-Critical", "P2-High", "P3-Medium", "P4-Low"];
-const impactOptions = ["High", "Medium", "Low"];
-const urgencyOptions = ["High", "Medium", "Low"];
 const priorityDotStyle = {
   "P1-Critical": "bg-red-500",
   "P2-High": "bg-orange-500",
@@ -191,12 +196,12 @@ export default function EmployeeDashboard({ view = "dashboard" }) {
                       {ticket.category || "Uncategorized"}
                     </td>
                     <td className="px-4 py-4">
-                      <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">
+                      <span className={getPriorityBadgeClass(ticket.priority)}>
                         {ticket.priority}
                       </span>
                     </td>
                     <td className="px-4 py-4">
-                      <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
+                      <span className={getStatusBadgeClass(ticket.status)}>
                         {ticket.status}
                       </span>
                     </td>
@@ -394,13 +399,13 @@ function CreateTicketModal({ categories, user, onClose, onCreated }) {
               label="Impact"
               value={form.impact}
               onChange={(value) => updateForm("impact", value)}
-              options={impactOptions.map((value) => ({ label: value, value }))}
+              options={severityOptions.map((value) => ({ label: value, value }))}
             />
             <SelectField
               label="Urgency"
               value={form.urgency}
               onChange={(value) => updateForm("urgency", value)}
-              options={urgencyOptions.map((value) => ({ label: value, value }))}
+              options={severityOptions.map((value) => ({ label: value, value }))}
             />
           </div>
 
@@ -731,6 +736,9 @@ function EmployeeTicketDetails({ ticket, user, onClose, onUpdated }) {
 }
 
 function SelectField({ label, value, onChange, options }) {
+  const shouldColorBySeverity =
+    label === "Priority" || label === "Impact" || label === "Urgency";
+
   return (
     <div>
       <label className="mb-2 block text-sm font-bold text-slate-700">
@@ -739,10 +747,18 @@ function SelectField({ label, value, onChange, options }) {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-100"
+        className={`w-full rounded-xl border px-4 py-3 outline-none transition-colors focus:ring-4 ${
+          shouldColorBySeverity
+            ? getSeveritySelectClass(value)
+            : "border-slate-200 bg-slate-50 text-slate-900 hover:bg-white focus:border-blue-600 focus:bg-white focus:ring-blue-100"
+        }`}
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option
+            key={option.value}
+            value={option.value}
+            style={shouldColorBySeverity ? getSeverityOptionStyle(option.value) : {}}
+          >
             {option.label}
           </option>
         ))}
