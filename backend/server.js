@@ -2763,6 +2763,8 @@ app.get("/api/v1/requests/:id", async (req, res) => {
   }
 });
 
+app.get('/', (req, res) => res.status(200).json({ success: true, message: "API is online" }));
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
