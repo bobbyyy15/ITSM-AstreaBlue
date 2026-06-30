@@ -28,7 +28,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "3mb" }));
 
 const ticketUploadDir = path.join(__dirname, "uploads", "tickets");
 fs.mkdirSync(ticketUploadDir, { recursive: true });
@@ -269,6 +269,7 @@ async function ensureHardwareAssetTables() {
         signature_link TEXT,
         returned_name_forms VARCHAR(255),
         attachments JSONB,
+        image_url TEXT,
         branch_id INTEGER REFERENCES branches(branch_id),
         status VARCHAR(50) NOT NULL DEFAULT 'Active',
         purchase_date DATE,
@@ -313,6 +314,8 @@ async function ensureHardwareAssetTables() {
       ADD COLUMN IF NOT EXISTS signature_link TEXT,
       ADD COLUMN IF NOT EXISTS returned_name_forms VARCHAR(255),
       ADD COLUMN IF NOT EXISTS attachments JSONB,
+      ADD COLUMN IF NOT EXISTS image_url TEXT,
+      ADD COLUMN IF NOT EXISTS branch_id INTEGER REFERENCES branches(branch_id),
       ADD COLUMN IF NOT EXISTS location VARCHAR(255),
       ADD COLUMN IF NOT EXISTS department VARCHAR(100),
       ADD COLUMN IF NOT EXISTS warranty_expiration DATE,
@@ -391,13 +394,15 @@ async function ensureHardwareAssetTables() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    return true;
   } catch (err) {
     console.error("Hardware asset table setup error:", err.message);
+    return false;
   }
 }
 
 ensureAttachmentsAndInvites();
-ensureHardwareAssetTables();
+const hardwareAssetTablesReady = ensureHardwareAssetTables();
 
 /* ==========================
    AUTH ROUTES
@@ -929,6 +934,28 @@ function getHardwareAssetAccessFilter(req) {
   return { whereSql: "", params: [] };
 }
 
+function logHardwareAssetError(operation, err) {
+  console.error(`[Hardware Assets] ${operation} failed`, {
+    message: err.message,
+    code: err.code || null,
+    detail: err.detail || null,
+    constraint: err.constraint || null,
+  });
+}
+
+function getHardwareAssetErrorMessage(err, fallback) {
+  if (err.code === "23505") return "An asset with this serial number or asset tag already exists.";
+  if (err.code === "23503") return "The selected branch or assigned record does not exist.";
+  if (err.code === "22P02") return "One or more asset values have an invalid format.";
+  if (err.code === "42703") return "The hardware asset database schema is not up to date.";
+  return err.message || fallback;
+}
+
+async function requireHardwareAssetTables() {
+  const ready = await hardwareAssetTablesReady;
+  if (!ready) throw new Error("Hardware asset database initialization failed.");
+}
+
 async function insertAssetHistory(assetId, eventType, eventData, branchId, createdBy) {
   try {
     await db.query(
@@ -988,6 +1015,7 @@ async function createBorrowRecord(assetId, record) {
 
 app.get("/api/v1/hardware-assets", async (req, res) => {
   try {
+    await requireHardwareAssetTables();
     const accessFilter = getHardwareAssetAccessFilter(req);
     const params = [...accessFilter.params];
     const filters = [];
@@ -1055,6 +1083,7 @@ app.get("/api/v1/hardware-assets", async (req, res) => {
         a.signature_link,
         a.returned_name_forms,
         a.attachments,
+        a.image_url,
         a.location,
         a.department,
         a.status,
@@ -1084,13 +1113,37 @@ app.get("/api/v1/hardware-assets", async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
-    console.error("Fetch hardware assets error:", err.message);
-    res.status(500).json({ success: false, error: "Failed to fetch hardware assets" });
+    logHardwareAssetError("GET", err);
+    return res.status(500).json({
+      success: false,
+      error: getHardwareAssetErrorMessage(err, "Failed to fetch hardware assets"),
+    });
+  }
+});
+
+app.get("/api/v1/hardware-assets/:id/history", async (req, res) => {
+  try {
+    await requireHardwareAssetTables();
+    const result = await db.query(
+      `
+      SELECT history_id, asset_id, event_type, event_data, branch_id, created_by, created_at
+      FROM asset_history
+      WHERE asset_id = $1
+      ORDER BY created_at DESC
+      `,
+      [req.params.id]
+    );
+
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("Fetch asset history error:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to fetch asset history" });
   }
 });
 
 app.post("/api/v1/hardware-assets", async (req, res) => {
   try {
+    await requireHardwareAssetTables();
     const {
       asset_name,
       asset_type,
@@ -1116,6 +1169,7 @@ app.post("/api/v1/hardware-assets", async (req, res) => {
       signature_link,
       returned_name_forms,
       attachments,
+      image_url,
       location,
       department,
       branch_id: requestedBranchId,
@@ -1264,7 +1318,15 @@ app.post("/api/v1/hardware-assets", async (req, res) => {
       ]
     );
 
-    const asset = result.rows[0];
+    let asset = result.rows[0];
+
+    if (image_url) {
+      const imageResult = await db.query(
+        "UPDATE hardware_assets SET image_url = $1 WHERE asset_id = $2 RETURNING *",
+        [image_url, asset.asset_id]
+      );
+      asset = imageResult.rows[0];
+    }
 
     await insertAssetHistory(asset.asset_id, "Asset Created", {
       status,
@@ -1292,16 +1354,20 @@ app.post("/api/v1/hardware-assets", async (req, res) => {
 
     res.status(201).json(asset);
   } catch (err) {
-    console.error("Create hardware asset error:", err.message);
+    logHardwareAssetError("POST", err);
     if (err.code === "23505") {
-      return res.status(409).json({ success: false, error: "Asset serial number or tag already exists" });
+      return res.status(409).json({ success: false, error: getHardwareAssetErrorMessage(err) });
     }
-    res.status(500).json({ success: false, error: "Failed to create hardware asset" });
+    return res.status(500).json({
+      success: false,
+      error: getHardwareAssetErrorMessage(err, "Failed to create hardware asset"),
+    });
   }
 });
 
 app.put("/api/v1/hardware-assets/:id", async (req, res) => {
   try {
+    await requireHardwareAssetTables();
     const { id } = req.params;
     const {
       asset_name,
@@ -1328,6 +1394,7 @@ app.put("/api/v1/hardware-assets/:id", async (req, res) => {
       signature_link,
       returned_name_forms,
       attachments,
+      image_url,
       location,
       department,
       branch_id: requestedBranchId,
@@ -1477,9 +1544,19 @@ app.put("/api/v1/hardware-assets/:id", async (req, res) => {
       ]
     );
 
-    await insertAssetHistory(result.rows[0].asset_id, "Asset Updated", { status: status || existing.rows[0].status }, branchId, null);
+    let updatedAsset = result.rows[0];
 
-    res.json(result.rows[0]);
+    if (image_url !== undefined) {
+      const imageResult = await db.query(
+        "UPDATE hardware_assets SET image_url = $1 WHERE asset_id = $2 RETURNING *",
+        [image_url || null, id]
+      );
+      updatedAsset = imageResult.rows[0];
+    }
+
+    await insertAssetHistory(updatedAsset.asset_id, "Asset Updated", { status: status || existing.rows[0].status }, branchId, null);
+
+    res.json(updatedAsset);
   } catch (err) {
     console.error("Update hardware asset error:", err.message);
     res.status(500).json({ success: false, error: "Failed to update hardware asset" });
@@ -1488,6 +1565,7 @@ app.put("/api/v1/hardware-assets/:id", async (req, res) => {
 
 app.patch("/api/v1/hardware-assets/:id/status", async (req, res) => {
   try {
+    await requireHardwareAssetTables();
     const { id } = req.params;
     const {
       status,

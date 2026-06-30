@@ -23,7 +23,7 @@ function getTransporter({ fallback = false } = {}) {
   const secure = fallback ? false : configuredSecure ? configuredSecure === "true" : port === 465;
 
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    host: cleanEnv(process.env.SMTP_HOST) || "smtp.gmail.com",
     port,
     secure,
     requireTLS: fallback || port === 587,

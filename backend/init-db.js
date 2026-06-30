@@ -6,6 +6,7 @@ const migrationFiles = [
   "BASE_SCHEMA.sql",
   "2026-06-19-role-branch-management.sql",
   "2026-06-25-invite-link-registration-foundation.sql",
+  "2026-06-30-hardware-assets-image.sql",
 ];
 
 const defaultTicketCategories = [
