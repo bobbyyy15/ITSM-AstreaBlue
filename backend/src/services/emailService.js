@@ -1,5 +1,4 @@
 const nodemailer = require("nodemailer");
-const { Resend } = require("resend");
 
 function cleanEnv(value) {
   return String(value || "").trim();
@@ -21,8 +20,11 @@ function smtpConfig() {
   const auth = smtpCredentials();
   const configuredPort = Number.parseInt(cleanEnv(process.env.SMTP_PORT), 10);
   const port = Number.isInteger(configuredPort) ? configuredPort : 587;
+  
+  let secure = port === 465;
   const secureStr = cleanEnv(process.env.SMTP_SECURE).toLowerCase();
-  const secure = secureStr === "true" ? true : (secureStr === "false" ? false : port === 465);
+  if (secureStr === "true") secure = true;
+  else if (secureStr === "false") secure = false;
 
   return {
     host: cleanEnv(process.env.SMTP_HOST),
@@ -30,6 +32,10 @@ function smtpConfig() {
     secure,
     requireTLS: port === 587,
     auth,
+    tls: {
+      rejectUnauthorized: false,
+    },
+    family: 4,
     connectionTimeout: 30000,
     greetingTimeout: 30000,
     socketTimeout: 30000,
@@ -39,63 +45,32 @@ function smtpConfig() {
   };
 }
 
-function getTransporter() {
-  return nodemailer.createTransport(smtpConfig());
-}
-
-function emailProvider() {
-  return cleanEnv(process.env.EMAIL_PROVIDER).toLowerCase() === "resend" &&
-    cleanEnv(process.env.RESEND_API_KEY)
-    ? "resend"
-    : "smtp";
-}
-
-async function sendSmtpMail(message) {
+async function sendMail(message) {
+  const startedAt = Date.now();
   const config = smtpConfig();
-  const transporter = getTransporter();
-  await transporter.verify();
-  const info = await transporter.sendMail(message);
-  return {
-    success: true,
+  const diagnostics = {
     provider: "smtp",
     host: config.host,
     port: config.port,
-    messageId: info.messageId || null,
-  };
-}
-
-async function sendResendMail(message) {
-  const apiKey = cleanEnv(process.env.RESEND_API_KEY);
-  if (!apiKey) throw new Error("Resend configuration is incomplete: RESEND_API_KEY is missing.");
-
-  const { data, error } = await new Resend(apiKey).emails.send(message);
-  if (error) {
-    const sendError = new Error(error.message || "Resend email delivery failed.");
-    sendError.code = error.name || "RESEND_ERROR";
-    throw sendError;
-  }
-
-  return { success: true, provider: "resend", messageId: data?.id || null };
-}
-
-async function sendMail(message) {
-  const provider = emailProvider();
-  const startedAt = Date.now();
-  const config = provider === "smtp" ? smtpConfig() : null;
-  const diagnostics = {
-    provider,
-    host: config?.host || "api.resend.com",
-    port: config?.port || 443,
-    secure: config?.secure ?? true,
+    secure: config.secure,
     sender: message.from,
     receiver: message.to,
   };
 
   console.info("Email delivery started", diagnostics);
   try {
-    const result = provider === "resend"
-      ? await sendResendMail(message)
-      : await sendSmtpMail(message);
+    const transporter = nodemailer.createTransport(config);
+    await transporter.verify();
+    const info = await transporter.sendMail(message);
+    
+    const result = {
+      success: true,
+      provider: "smtp",
+      host: config.host,
+      port: config.port,
+      messageId: info.messageId || null,
+    };
+    
     console.info("Email delivery succeeded", { ...diagnostics, responseTimeMs: Date.now() - startedAt });
     return result;
   } catch (error) {
@@ -109,6 +84,9 @@ async function sendMail(message) {
 }
 
 function exactEmailError(error) {
+  if (error?.code === "ETIMEDOUT") {
+    return "SMTP connection timed out. Check Railway network access, SMTP_HOST, SMTP_PORT, and Google App Password.";
+  }
   return [error?.code, error?.command, error?.response, error?.message]
     .filter(Boolean)
     .filter((value, index, values) => values.indexOf(value) === index)
@@ -116,15 +94,6 @@ function exactEmailError(error) {
 }
 
 function getMissingSmtpConfig() {
-  if (emailProvider() === "resend") {
-    return ["RESEND_API_KEY", "EMAIL_FROM or SMTP_FROM_EMAIL"].filter((key) => {
-      if (key === "EMAIL_FROM or SMTP_FROM_EMAIL") {
-        return !cleanEnv(process.env.EMAIL_FROM) && !cleanEnv(process.env.SMTP_FROM_EMAIL);
-      }
-      return !cleanEnv(process.env.RESEND_API_KEY);
-    });
-  }
-
   return [
     "SMTP_HOST",
     "SMTP_USER",
@@ -197,7 +166,7 @@ async function sendInvitationEmail({
   } catch (error) {
     return {
       success: false,
-      provider: emailProvider(),
+      provider: "smtp",
       error: exactEmailError(error),
     };
   }
@@ -210,8 +179,7 @@ async function sendWelcomeEmail() {
 async function sendTestEmail(to) {
   try {
     const timestamp = new Date().toLocaleString();
-    const provider = emailProvider();
-    const providerName = provider === "smtp" ? "SMTP" : "Resend";
+    const providerName = "SMTP";
 
     const textContent = [
       "Hello,",
@@ -265,12 +233,12 @@ async function sendTestEmail(to) {
       html: htmlContent,
     });
   } catch (error) {
-    const provider = emailProvider();
-    const config = provider === "smtp" ? smtpConfig() : null;
+    const config = smtpConfig();
     return {
       success: false,
-      provider,
-      ...(config ? { host: config.host, port: config.port } : {}),
+      provider: "smtp",
+      host: config.host,
+      port: config.port,
       error: exactEmailError(error),
     };
   }
