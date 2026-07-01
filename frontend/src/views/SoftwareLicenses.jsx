@@ -10,12 +10,14 @@ import {
   CheckCircle,
   ChevronDown,
   DollarSign,
+  Download,
   Edit3,
   FileText,
   Layers,
   Package,
   PieChart,
   Plus,
+  Printer,
   Search,
   Shield,
   Trash2,
@@ -569,6 +571,9 @@ export default function SoftwareLicenses() {
   /* ── Derived totals for utilization ── */
   const totalUsed = licenses.reduce((s, l) => s + (l.used_licenses || 0), 0);
   const totalLicensesCount = licenses.reduce((s, l) => s + (l.total_licenses || 0), 0);
+  const activeCount = licenses.filter((l) => l.status === "Active").length;
+  const expiringSoonCount = licenses.filter((l) => l.status === "Expiring Soon").length;
+  const expiredCount = licenses.filter((l) => l.status === "Expired").length;
 
   /* ── Handlers ── */
   const handleAdd = async (formData) => {
@@ -627,29 +632,72 @@ export default function SoftwareLicenses() {
     }
   };
 
+  const handleExport = () => {
+    if (filteredLicenses.length === 0) return;
+    const headers = ["License Name", "Vendor", "Type", "Total Licenses", "Used Licenses", "Expiry Date", "Annual Cost", "Status", "Branch"];
+    const rows = filteredLicenses.map((l) => [
+      l.license_name, l.vendor, l.license_type, l.total_licenses, l.used_licenses,
+      l.expiry_date, l.annual_cost, l.status, l.branch_name,
+    ]);
+    const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${v || ""}"`).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "software-licenses.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   /* ── Render ── */
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Hero Banner */}
+      <section className="flex flex-col gap-4 rounded-3xl bg-gradient-to-r from-slate-950 via-blue-950 to-blue-800 p-7 text-white shadow-xl lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-xl font-black text-slate-900">Software License Management</h1>
-          <p className="text-sm text-slate-400">
-            {isSuperAdmin ? "Manage licenses across all branches" : `Manage licenses for ${user?.branch_name || "your branch"}`}
+          <h1 className="text-3xl font-black">Software License Management</h1>
+          <p className="mt-2 max-w-2xl text-slate-200">
+            Track software licenses, compliance status, renewal dates, usage, and branch assignments.
+          </p>
+          <p className="mt-4 text-sm text-blue-100">
+            {totalLicensesCount} total licenses · {activeCount} active · {expiringSoonCount} expiring soon · {expiredCount} expired
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setSaveError("");
-            setShowAddModal(true);
-          }}
-          className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-black text-white transition hover:bg-blue-700"
-        >
-          <Plus size={16} />
-          Add License
-        </button>
-      </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setSaveError("");
+              setShowAddModal(true);
+            }}
+            className="flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-900 shadow-lg shadow-slate-900/10 transition hover:bg-slate-100"
+          >
+            <Plus size={18} />
+            Add License
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-slate-900/5 px-5 py-3 text-sm font-black text-slate-900 transition hover:bg-slate-100"
+          >
+            <Download size={18} />
+            Export
+          </button>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-slate-900/5 px-5 py-3 text-sm font-black text-slate-900 transition hover:bg-slate-100"
+          >
+            <Printer size={18} />
+            Print
+          </button>
+        </div>
+      </section>
 
       {/* Error banner */}
       {error && (
