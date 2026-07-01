@@ -2492,15 +2492,83 @@ async function ensureSoftwareLicensesTable() {
 }
 ensureSoftwareLicensesTable();
 
+function parseBranchId(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (["all", "undefined", "null"].includes(String(value).toLowerCase())) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function getSoftwareLicenseUser(req) {
+  const user = decodeRequestUser(req);
+  if (!user) return null;
+
+  return {
+    userId: user.userId || user.id || null,
+    role: normalizeRole(user.role),
+    branchId: parseBranchId(user.branchId),
+  };
+}
+
+function getSoftwareLicenseScope(req) {
+  const user = getSoftwareLicenseUser(req);
+  if (!user) return { unauthorized: true };
+
+  if (user.role === "superadmin") {
+    return {
+      user,
+      branchId: parseBranchId(req.query.branch_id || req.query.filter_branch_id),
+      canSeeAll: true,
+    };
+  }
+
+  if (user.role === "admin") {
+    if (!user.branchId) return { forbidden: true };
+    return { user, branchId: user.branchId, canSeeAll: false };
+  }
+
+  return { forbidden: true };
+}
+
+function requireSoftwareLicenseScope(req, res) {
+  const scope = getSoftwareLicenseScope(req);
+  if (scope.unauthorized) {
+    res.status(401).json({ success: false, error: "Authentication required." });
+    return null;
+  }
+  if (scope.forbidden) {
+    res.status(403).json({ success: false, error: "Access denied for your role or branch." });
+    return null;
+  }
+  return scope;
+}
+
+async function branchExists(branchId) {
+  if (!branchId) return false;
+  const result = await db.query(
+    `SELECT branch_id FROM branches WHERE branch_id = $1 LIMIT 1`,
+    [branchId]
+  );
+  return result.rows.length > 0;
+}
+
+function canManageSoftwareLicense(scope, licenseBranchId) {
+  if (!scope?.user) return false;
+  if (scope.user.role === "superadmin") return true;
+  return scope.user.role === "admin" && Number(scope.user.branchId) === Number(licenseBranchId);
+}
+
 // GET /api/v1/software-licenses?branch_id=1
 app.get("/api/v1/software-licenses", async (req, res) => {
   try {
-    const { branch_id } = req.query;
+    const scope = requireSoftwareLicenseScope(req, res);
+    if (!scope) return;
+
     let whereClause = "";
     const params = [];
 
-    if (branch_id && branch_id !== "all" && branch_id !== "undefined" && branch_id !== "null") {
-      params.push(parseInt(branch_id));
+    if (scope.branchId) {
+      params.push(scope.branchId);
       whereClause = `WHERE sl.branch_id = $1`;
     }
 
@@ -2525,12 +2593,14 @@ app.get("/api/v1/software-licenses", async (req, res) => {
 // GET /api/v1/software-licenses/summary?branch_id=1
 app.get("/api/v1/software-licenses/summary", async (req, res) => {
   try {
-    const { branch_id } = req.query;
+    const scope = requireSoftwareLicenseScope(req, res);
+    if (!scope) return;
+
     let whereClause = "";
     const params = [];
 
-    if (branch_id && branch_id !== "all" && branch_id !== "undefined" && branch_id !== "null") {
-      params.push(parseInt(branch_id));
+    if (scope.branchId) {
+      params.push(scope.branchId);
       whereClause = `WHERE sl.branch_id = $1`;
     }
 
@@ -2556,7 +2626,11 @@ app.get("/api/v1/software-licenses/summary", async (req, res) => {
 // POST /api/v1/software-licenses
 app.post("/api/v1/software-licenses", async (req, res) => {
   try {
+    const scope = requireSoftwareLicenseScope(req, res);
+    if (!scope) return;
+
     const { license_name, vendor, license_type, total_licenses, used_licenses, expiry_date, annual_cost, status, branch_id } = req.body;
+    const targetBranchId = scope.user.role === "superadmin" ? parseBranchId(branch_id) : scope.user.branchId;
 
     if (!license_name || !vendor || !license_type) {
       return res.status(400).json({ success: false, error: "License name, vendor, and type are required." });
@@ -2566,15 +2640,19 @@ app.post("/api/v1/software-licenses", async (req, res) => {
       return res.status(400).json({ success: false, error: "Used licenses cannot exceed total licenses." });
     }
 
-    if (!branch_id) {
+    if (!targetBranchId) {
       return res.status(400).json({ success: false, error: "Branch is required." });
+    }
+
+    if (!(await branchExists(targetBranchId))) {
+      return res.status(400).json({ success: false, error: "Selected branch does not exist or is inactive." });
     }
 
     const result = await db.query(
       `INSERT INTO software_licenses (license_name, vendor, license_type, total_licenses, used_licenses, expiry_date, annual_cost, status, branch_id)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *`,
-      [license_name, vendor, license_type, parseInt(total_licenses), parseInt(used_licenses), expiry_date || null, parseFloat(annual_cost) || 0, status || 'Active', parseInt(branch_id)]
+      [license_name, vendor, license_type, parseInt(total_licenses), parseInt(used_licenses), expiry_date || null, parseFloat(annual_cost) || 0, status || 'Active', targetBranchId]
     );
 
     res.status(201).json({ success: true, data: result.rows[0] });
@@ -2587,11 +2665,34 @@ app.post("/api/v1/software-licenses", async (req, res) => {
 // PUT /api/v1/software-licenses/:id
 app.put("/api/v1/software-licenses/:id", async (req, res) => {
   try {
+    const scope = requireSoftwareLicenseScope(req, res);
+    if (!scope) return;
+
     const { id } = req.params;
     const { license_name, vendor, license_type, total_licenses, used_licenses, expiry_date, annual_cost, status, branch_id } = req.body;
+    const existing = await db.query(
+      `SELECT license_id, branch_id FROM software_licenses WHERE license_id = $1 LIMIT 1`,
+      [parseInt(id)]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "License not found." });
+    }
+
+    if (!canManageSoftwareLicense(scope, existing.rows[0].branch_id)) {
+      return res.status(403).json({ success: false, error: "Update denied for this license branch." });
+    }
 
     if (parseInt(used_licenses) > parseInt(total_licenses)) {
       return res.status(400).json({ success: false, error: "Used licenses cannot exceed total licenses." });
+    }
+
+    const targetBranchId = scope.user.role === "superadmin"
+      ? parseBranchId(branch_id) || existing.rows[0].branch_id
+      : existing.rows[0].branch_id;
+
+    if (!(await branchExists(targetBranchId))) {
+      return res.status(400).json({ success: false, error: "Selected branch does not exist or is inactive." });
     }
 
     const result = await db.query(
@@ -2599,11 +2700,11 @@ app.put("/api/v1/software-licenses/:id", async (req, res) => {
         license_name = $1, vendor = $2, license_type = $3,
         total_licenses = $4, used_licenses = $5,
         expiry_date = $6, annual_cost = $7, status = $8,
-        branch_id = COALESCE($9, branch_id),
+        branch_id = $9,
         updated_at = CURRENT_TIMESTAMP
       WHERE license_id = $10
       RETURNING *`,
-      [license_name, vendor, license_type, parseInt(total_licenses), parseInt(used_licenses), expiry_date || null, parseFloat(annual_cost) || 0, status || 'Active', branch_id ? parseInt(branch_id) : null, parseInt(id)]
+      [license_name, vendor, license_type, parseInt(total_licenses), parseInt(used_licenses), expiry_date || null, parseFloat(annual_cost) || 0, status || 'Active', targetBranchId, parseInt(id)]
     );
 
     if (result.rows.length === 0) {
@@ -2620,7 +2721,23 @@ app.put("/api/v1/software-licenses/:id", async (req, res) => {
 // DELETE /api/v1/software-licenses/:id
 app.delete("/api/v1/software-licenses/:id", async (req, res) => {
   try {
+    const scope = requireSoftwareLicenseScope(req, res);
+    if (!scope) return;
+
     const { id } = req.params;
+    const existing = await db.query(
+      `SELECT license_id, branch_id FROM software_licenses WHERE license_id = $1 LIMIT 1`,
+      [parseInt(id)]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "License not found." });
+    }
+
+    if (!canManageSoftwareLicense(scope, existing.rows[0].branch_id)) {
+      return res.status(403).json({ success: false, error: "Delete denied for this license branch." });
+    }
+
     const result = await db.query(
       `DELETE FROM software_licenses WHERE license_id = $1 RETURNING license_id`,
       [parseInt(id)]

@@ -29,6 +29,41 @@ const API_BASE = `${API_URL}/api/v1`;
 const LICENSE_TYPES = ["Subscription", "Annual", "Perpetual"];
 const LICENSE_STATUSES = ["Active", "Expiring Soon", "Expired", "Available"];
 
+function getRoleName(user) {
+  return String(user?.role_name || user?.role || "");
+}
+
+function isSuperAdminUser(user) {
+  return getRoleName(user).trim().toLowerCase() === "superadmin";
+}
+
+function buildLicenseQuery(user, extra = {}) {
+  const params = new URLSearchParams();
+  const roleName = getRoleName(user);
+
+  if (user?.user_id) params.set("current_user_id", user.user_id);
+  if (roleName) params.set("role_name", roleName);
+  if (user?.branch_id) params.set("current_branch_id", user.branch_id);
+
+  Object.entries(extra).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "" && value !== "all") {
+      params.set(key, value);
+    }
+  });
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function buildLicensePayload(user, payload = {}) {
+  return {
+    ...payload,
+    current_user_id: user?.user_id || null,
+    role_name: getRoleName(user) || null,
+    current_branch_id: user?.branch_id || null,
+  };
+}
+
 /* ─────────────────────────────────────────────
    Util: format currency
    ───────────────────────────────────────────── */
@@ -460,7 +495,7 @@ function EditLicenseModal({ license, onClose, onSave, loading, error, branches =
    ───────────────────────────────────────────── */
 export default function SoftwareLicenses() {
   const { user } = useAuth();
-  const isSuperAdmin = user?.role_name === "SuperAdmin";
+  const isSuperAdmin = isSuperAdminUser(user);
 
   const [licenses, setLicenses] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -490,12 +525,13 @@ export default function SoftwareLicenses() {
       setLoading(true);
       setError("");
 
-      const params = new URLSearchParams();
-      if (isSuperAdmin && branchFilter !== "all") params.set("branch_id", branchFilter);
+      const query = buildLicenseQuery(user, {
+        branch_id: isSuperAdmin && branchFilter !== "all" ? branchFilter : null,
+      });
 
       const [licensesRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/software-licenses?${params}`),
-        fetch(`${API_BASE}/software-licenses/summary?${params}`),
+        fetch(`${API_BASE}/software-licenses${query}`),
+        fetch(`${API_BASE}/software-licenses/summary${query}`),
       ]);
 
       if (!licensesRes.ok) throw new Error("Failed to fetch licenses");
@@ -512,7 +548,7 @@ export default function SoftwareLicenses() {
     } finally {
       setLoading(false);
     }
-  }, [isSuperAdmin, branchFilter]);
+  }, [user, isSuperAdmin, branchFilter]);
 
   useEffect(() => {
     fetchData();
@@ -542,7 +578,7 @@ export default function SoftwareLicenses() {
       const res = await fetch(`${API_BASE}/software-licenses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(buildLicensePayload(user, formData)),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Failed to add license.");
@@ -563,7 +599,7 @@ export default function SoftwareLicenses() {
       const res = await fetch(`${API_BASE}/software-licenses/${editingLicense.license_id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(buildLicensePayload(user, formData)),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "Failed to update license.");
